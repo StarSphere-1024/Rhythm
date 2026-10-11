@@ -1,0 +1,433 @@
+import 'package:flutter/material.dart';
+import 'package:timezone/timezone.dart' as tz;
+
+import '../core/models.dart';
+import '../core/planner.dart';
+import '../core/recurrence.dart';
+import 'common.dart';
+
+Future<void> showTaskEditor(
+  BuildContext context,
+  Planner planner, {
+  Task? task,
+  Occurrence? occurrence,
+  DateTime? preset,
+  EditScope scope = EditScope.entireSeries,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (context) => TaskEditor(
+    planner: planner,
+    task: task,
+    occurrence: occurrence,
+    preset: preset,
+    scope: scope,
+  ),
+);
+
+class TaskEditor extends StatefulWidget {
+  const TaskEditor({
+    super.key,
+    required this.planner,
+    this.task,
+    this.occurrence,
+    this.preset,
+    required this.scope,
+  });
+  final Planner planner;
+  final Task? task;
+  final Occurrence? occurrence;
+  final DateTime? preset;
+  final EditScope scope;
+  @override
+  State<TaskEditor> createState() => _TaskEditorState();
+}
+
+class _TaskEditorState extends State<TaskEditor> {
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _title;
+  late final TextEditingController _category;
+  late final TextEditingController _notes;
+  late final TextEditingController _duration;
+  late DateTime _start;
+  late int _minutes;
+  late bool _scheduled;
+  late int _color;
+  late Repeat _repeat;
+  late Set<int> _weekdays;
+  late int? _reminder;
+  late String _timezone;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final draft = widget.task == null
+        ? TaskDraft(
+            title: '',
+            start: widget.preset == null
+                ? null
+                : _wallInZone(widget.preset!, widget.planner.timezone),
+            timezone: widget.planner.timezone,
+          )
+        : widget.planner.draftFor(
+            widget.task!,
+            occurrence: widget.occurrence,
+            scope: widget.scope,
+          );
+    _title = TextEditingController(text: draft.title);
+    _category = TextEditingController(text: draft.category);
+    _notes = TextEditingController(text: draft.notes);
+    _minutes = draft.durationMinutes;
+    _duration = TextEditingController(text: '$_minutes');
+    _scheduled = draft.start != null;
+    _start = draft.start ?? _wallInZone(DateTime.now(), draft.timezone);
+    _color = draft.color;
+    _repeat = draft.repeat;
+    _weekdays = {...draft.weekdays};
+    _reminder = draft.reminderMinutes;
+    _timezone = draft.timezone;
+  }
+
+  static DateTime _wallInZone(DateTime instant, String zone) {
+    final local = tz.TZDateTime.from(instant, Recurrence.location(zone));
+    return DateTime(
+      local.year,
+      local.month,
+      local.day,
+      local.hour,
+      local.minute,
+    );
+  }
+
+  DateTime get _end => _wallInZone(
+    Recurrence.resolve(_start, _timezone).add(Duration(minutes: _minutes)),
+    _timezone,
+  );
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _category.dispose();
+    _notes.dispose();
+    _duration.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_form.currentState!.validate()) return;
+    if (_scheduled && _repeat == Repeat.weekly && _weekdays.isEmpty) {
+      showError(context, '每周重复至少选择一天');
+      return;
+    }
+    setState(() => _saving = true);
+    final success = await perform(
+      context,
+      () => widget.planner.saveTask(
+        TaskDraft(
+          title: _title.text.trim(),
+          category: _category.text.trim().isEmpty
+              ? '其他'
+              : _category.text.trim(),
+          notes: _notes.text.trim(),
+          color: _color,
+          durationMinutes: int.parse(_duration.text),
+          start: _scheduled ? _start : null,
+          repeat: _scheduled ? _repeat : Repeat.none,
+          weekdays: _weekdays,
+          reminderMinutes: _scheduled ? _reminder : null,
+          timezone: _timezone,
+        ),
+        taskId: widget.task?.id,
+        occurrence: widget.occurrence,
+        scope: widget.scope,
+      ),
+    );
+    if (!mounted) return;
+    if (success) {
+      Navigator.pop(context);
+    } else {
+      setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _pickStart() async {
+    final value = await pickDateAndTime(context, _start);
+    if (value != null && mounted) setState(() => _start = value);
+  }
+
+  Future<void> _pickEnd() async {
+    final end = await pickDateAndTime(context, _end);
+    if (end == null || !mounted) return;
+    final minutes = Recurrence.resolve(
+      end,
+      _timezone,
+    ).difference(Recurrence.resolve(_start, _timezone)).inMinutes;
+    if (minutes <= 0) {
+      showError(context, '结束必须晚于开始；跨午夜请选下一天的日期');
+      return;
+    }
+    setState(() {
+      _minutes = minutes;
+      _duration.text = '$minutes';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final end = _end;
+    final scopeText = switch (widget.scope) {
+      EditScope.thisOccurrence => '仅本次',
+      EditScope.thisAndFuture => '本次及以后',
+      EditScope.entireSeries => '整个系列',
+    };
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .88,
+        child: SafeArea(
+          top: false,
+          child: Form(
+            key: _form,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  widget.task == null ? '新的节律' : '编辑任务',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                if (widget.occurrence != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('编辑范围：$scopeText · 已有执行历史会保留'),
+                  ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _title,
+                  autofocus: widget.task == null,
+                  decoration: const InputDecoration(
+                    labelText: '任务名称',
+                    hintText: '只填名称即可保存到收集箱',
+                  ),
+                  maxLength: 120,
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty ? '请填写名称' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _category,
+                  decoration: const InputDecoration(
+                    labelText: '分类',
+                    hintText: '选择下方分类或输入自定义名称',
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final category in ['健身', '学习', '社交', '生活', '其他'])
+                      ActionChip(
+                        label: Text(category),
+                        onPressed: () =>
+                            setState(() => _category.text = category),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('分类颜色'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final color in [
+                      0xff5e8174,
+                      0xff6585a8,
+                      0xffa6758d,
+                      0xffb18145,
+                      0xff8074ad,
+                      0xffa86262,
+                    ])
+                      Semantics(
+                        label: '选择颜色 ${color.toRadixString(16)}',
+                        selected: color == _color,
+                        child: InkWell(
+                          onTap: () => setState(() => _color = color),
+                          borderRadius: BorderRadius.circular(24),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Center(
+                              child: CircleAvatar(
+                                radius: 18,
+                                backgroundColor: Color(color),
+                                child: color == _color
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _duration,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '时长（分钟）'),
+                  validator: (value) {
+                    final number = int.tryParse(value ?? '');
+                    return number == null || number <= 0 || number > 10080
+                        ? '请输入 1–10080 分钟'
+                        : null;
+                  },
+                  onChanged: (value) {
+                    final number = int.tryParse(value);
+                    if (number != null && number > 0 && number <= 10080) {
+                      setState(() => _minutes = number);
+                    }
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('安排到日历'),
+                  subtitle: const Text('关闭时保存到收集箱'),
+                  value: _scheduled,
+                  onChanged: (value) => setState(() => _scheduled = value),
+                ),
+                if (_scheduled) ...[
+                  OutlinedButton.icon(
+                    onPressed: _pickStart,
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    label: Text('开始 ${dateLabel(_start)} ${timeLabel(_start)}'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _pickEnd,
+                    icon: const Icon(Icons.schedule),
+                    label: Text('结束 ${dateLabel(end)} ${timeLabel(end)}'),
+                  ),
+                  if (dayStart(end) != dayStart(_start))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        '跨午夜 · 同一日程会显示在经过的每一天，打卡只计算一次',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<Repeat>(
+                    initialValue: _repeat,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '重复'),
+                    items: const [
+                      DropdownMenuItem(value: Repeat.none, child: Text('不重复')),
+                      DropdownMenuItem(value: Repeat.daily, child: Text('每天')),
+                      DropdownMenuItem(value: Repeat.weekly, child: Text('每周')),
+                    ],
+                    onChanged: (value) => setState(() {
+                      _repeat = value!;
+                      if (_repeat == Repeat.weekly && _weekdays.isEmpty) {
+                        _weekdays.add(_start.weekday);
+                      }
+                    }),
+                  ),
+                  if (_repeat == Repeat.weekly)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Wrap(
+                        spacing: 6,
+                        children: [
+                          for (var weekday = 1; weekday <= 7; weekday++)
+                            FilterChip(
+                              label: Text('周${weekdayNames[weekday - 1]}'),
+                              selected: _weekdays.contains(weekday),
+                              onSelected: (selected) => setState(() {
+                                if (selected) {
+                                  _weekdays.add(weekday);
+                                } else {
+                                  _weekdays.remove(weekday);
+                                }
+                              }),
+                            ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<int>(
+                    initialValue: _reminder ?? -1,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '本地提醒'),
+                    items: [
+                      for (final minutes in {
+                        ...[-1, 0, 5, 10, 15, 30, 60, 1440],
+                        ?_reminder,
+                      })
+                        DropdownMenuItem(
+                          value: minutes,
+                          child: Text(
+                            minutes == -1
+                                ? '不提醒'
+                                : minutes == 0
+                                ? '开始时'
+                                : '提前 $minutes 分钟',
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _reminder = value == -1 ? null : value),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '计划时区：$_timezone。重复遵循此时区墙上时间；日 / 周视图按设备本地时间展示。提醒能力见设置。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _notes,
+                  decoration: const InputDecoration(labelText: '备注（可选）'),
+                  minLines: 2,
+                  maxLines: 6,
+                ),
+                const SizedBox(height: 24),
+                FilledButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check),
+                  label: Text(_saving ? '保存中…' : '保存任务'),
+                ),
+                TextButton(
+                  onPressed: _saving ? null : () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
