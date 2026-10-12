@@ -170,4 +170,50 @@ void main() {
       recovered.dispose();
     },
   );
+  test('SQLite reopen and full restore preserve routine snapshots', () async {
+    var p = await reopen();
+    await p.saveRoutinePreferences(
+      RoutinePreferences(
+        bedtimeMinutes: 1380,
+        wakeTimeMinutes: 420,
+        foldSleep: true,
+        wakeTimeCheckInEnabled: false,
+      ),
+    );
+    await p.recordRoutine(
+      type: RoutineType.bedtime,
+      targetDate: DateTime.utc(2026, 10, 5),
+      recordedAt: DateTime.utc(2026, 10, 5, 23, 15),
+      timezone: 'America/Los_Angeles',
+    );
+    final backup = p.exportJson();
+    p.dispose();
+    p = await reopen();
+    expect(p.exportJson(), backup);
+    expect(p.routinePreferences.bedtimeMinutes, 1380);
+    expect(p.routinePreferences.wakeTimeCheckInEnabled, isFalse);
+    expect(p.routineRecords.single.timezone, 'America/Los_Angeles');
+
+    final replacement = Planner.memory();
+    await replacement.saveRoutinePreferences(
+      RoutinePreferences(wakeTimeMinutes: 450),
+    );
+    await replacement.recordRoutine(
+      type: RoutineType.wakeTime,
+      targetDate: DateTime.utc(2026, 10, 6),
+      recordedAt: DateTime.utc(2026, 10, 6, 7, 30),
+      timezone: 'Asia/Tokyo',
+    );
+    final replacementBackup = replacement.exportJson();
+    await p.restoreJson(replacementBackup);
+    expect(p.exportJson(), replacementBackup);
+    expect(p.routineRecords.single.type, RoutineType.wakeTime);
+    expect(p.routinePreferences.bedtimeMinutes, isNull);
+    p.dispose();
+    p = await reopen();
+    expect(p.exportJson(), replacementBackup);
+    expect(p.routineRecords.single.targetMinutes, 450);
+    replacement.dispose();
+    p.dispose();
+  });
 }

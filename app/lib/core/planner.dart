@@ -17,6 +17,8 @@ class _Snapshot {
   final Map<String, ScheduleRule> rules;
   final Map<String, OccurrenceOverride> overrides;
   final Map<String, ExecutionRecord> records;
+  RoutinePreferences routinePreferences;
+  final Map<String, RoutineRecord> routineRecords;
   _Snapshot({
     required this.timezone,
     this.timezoneDetectionFallback = false,
@@ -25,11 +27,15 @@ class _Snapshot {
     Map<String, ScheduleRule>? rules,
     Map<String, OccurrenceOverride>? overrides,
     Map<String, ExecutionRecord>? records,
+    RoutinePreferences? routinePreferences,
+    Map<String, RoutineRecord>? routineRecords,
   }) : categories = categories ?? ['健身', '学习', '社交', '生活', '其他'],
        tasks = tasks ?? {},
        rules = rules ?? {},
        overrides = overrides ?? {},
-       records = records ?? {};
+       records = records ?? {},
+       routinePreferences = routinePreferences ?? RoutinePreferences(),
+       routineRecords = routineRecords ?? {};
   _Snapshot copy() => _Snapshot(
     timezone: timezone,
     timezoneDetectionFallback: timezoneDetectionFallback,
@@ -38,9 +44,11 @@ class _Snapshot {
     rules: Map.of(rules),
     overrides: Map.of(overrides),
     records: Map.of(records),
+    routinePreferences: routinePreferences,
+    routineRecords: Map.of(routineRecords),
   );
   Map<String, dynamic> toJson() => {
-    'schemaVersion': 1,
+    'schemaVersion': 2,
     'settings': {
       'timezone': timezone,
       'timezoneDetectionFallback': timezoneDetectionFallback,
@@ -50,10 +58,13 @@ class _Snapshot {
     'rules': rules.values.map((r) => r.toJson()).toList(),
     'overrides': overrides.values.map((o) => o.toJson()).toList(),
     'records': records.values.map((r) => r.toJson()).toList(),
+    'routinePreferences': routinePreferences.toJson(),
+    'routineRecords': routineRecords.values.map((r) => r.toJson()).toList(),
   };
   factory _Snapshot.decode(String source) {
     final root = jsonObject(jsonDecode(source));
-    if (jsonInt(root, 'schemaVersion') != 1) {
+    final schemaVersion = jsonInt(root, 'schemaVersion');
+    if (schemaVersion != 1 && schemaVersion != 2) {
       throw const FormatException('不支持的备份版本');
     }
     final settings = jsonObject(root['settings']);
@@ -97,7 +108,22 @@ class _Snapshot {
         (o) => o.id,
       ),
       records: decodeList('records', ExecutionRecord.fromJson, (r) => r.id),
+      routinePreferences: schemaVersion == 1
+          ? RoutinePreferences()
+          : RoutinePreferences.fromJson(root['routinePreferences']),
+      routineRecords: schemaVersion == 1
+          ? <String, RoutineRecord>{}
+          : decodeList('routineRecords', RoutineRecord.fromJson, (r) => r.id),
     );
+    final routineKeys = <String>{};
+    for (final record in result.routineRecords.values) {
+      _validZone(record.timezone);
+      if (!routineKeys.add(
+        '${record.type.name}:${record.targetDate.toIso8601String()}',
+      )) {
+        throw const FormatException('同类作息记录目标日期重复');
+      }
+    }
     void validateTask(Task task, String expectedId) {
       if (task.id != expectedId ||
           !result.tasks.containsKey(expectedId) ||
@@ -308,6 +334,13 @@ class Planner extends ChangeNotifier {
   List<Task> get tasks => List.unmodifiable(_state.tasks.values);
   List<ScheduleRule> get rules => List.unmodifiable(_state.rules.values);
   List<ExecutionRecord> get records => List.unmodifiable(_state.records.values);
+
+  /// The saved routine targets, fold preference, and independent check-in states.
+  RoutinePreferences get routinePreferences => _state.routinePreferences;
+
+  /// The immutable routine check-in snapshots held by the planner.
+  List<RoutineRecord> get routineRecords =>
+      List.unmodifiable(_state.routineRecords.values);
   List<Task> get inbox => _state.tasks.values
       .where(
         (task) =>
@@ -341,6 +374,55 @@ class Planner extends ChangeNotifier {
     _pending = action.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return action;
   }
+
+  /// Persists routine preferences before publishing the updated state.
+  Future<void> saveRoutinePreferences(RoutinePreferences preferences) =>
+      _mutate((state) {
+        state.routinePreferences = preferences;
+      });
+
+  /// Creates or corrects one check-in for a routine type and target date.
+  ///
+  /// The [timezone] snapshots how the target wall-clock time resolves. The
+  /// [targetDate] must be a UTC-midnight carrier; [recordedAt] may be any
+  /// instant and is normalized to UTC before persistence.
+  Future<void> recordRoutine({
+    required RoutineType type,
+    required DateTime targetDate,
+    required DateTime recordedAt,
+    required String timezone,
+  }) => _mutate((state) {
+    Recurrence.location(timezone);
+    final existing = state.routineRecords.values.where(
+      (record) => record.type == type && record.targetDate == targetDate,
+    );
+    final previous = existing.isEmpty ? null : existing.single;
+    final preferences = state.routinePreferences;
+    final minutes = switch (type) {
+      RoutineType.bedtime => preferences.bedtimeMinutes,
+      RoutineType.wakeTime => preferences.wakeTimeMinutes,
+    };
+    final enabled = switch (type) {
+      RoutineType.bedtime => preferences.bedtimeCheckInEnabled,
+      RoutineType.wakeTime => preferences.wakeTimeCheckInEnabled,
+    };
+    if (!enabled) throw StateError('作息打卡入口已关闭');
+    if (minutes == null) throw StateError('尚未设置作息目标时间');
+    final record = RoutineRecord(
+      id: previous?.id ?? _uuid.v4(),
+      type: type,
+      targetDate: targetDate,
+      targetMinutes: minutes,
+      timezone: timezone,
+      recordedAt: recordedAt.toUtc(),
+    );
+    state.routineRecords[record.id] = record;
+  });
+
+  /// Removes only the supplied [record]'s check-in.
+  Future<void> undoRoutine(RoutineRecord record) => _mutate((state) {
+    state.routineRecords.remove(record.id);
+  });
 
   Future<void> setTimezone(String zone) => _mutate((state) {
     Recurrence.location(zone);
@@ -945,6 +1027,10 @@ class Planner extends ChangeNotifier {
       state.records
         ..clear()
         ..addAll(restored.records);
+      state.routinePreferences = restored.routinePreferences;
+      state.routineRecords
+        ..clear()
+        ..addAll(restored.routineRecords);
     });
   }
 }

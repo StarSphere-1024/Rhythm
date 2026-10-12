@@ -6,6 +6,169 @@ enum EditScope { thisOccurrence, thisAndFuture, entireSeries }
 
 enum ExecutionStatus { completed, skipped }
 
+/// The distinct kinds of self-reported routine check-ins.
+enum RoutineType {
+  /// A check-in for the intended time to go to sleep.
+  bedtime,
+
+  /// A check-in for the intended time to wake up.
+  wakeTime,
+}
+
+/// The user's reusable routine targets and check-in availability.
+class RoutinePreferences {
+  /// The usual bedtime in minutes after midnight, or `null` when unconfigured.
+  final int? bedtimeMinutes;
+
+  /// The usual wake time in minutes after midnight, or `null` when unconfigured.
+  final int? wakeTimeMinutes;
+
+  /// Whether the configured sleep interval is folded in week views.
+  final bool foldSleep;
+
+  /// Whether users can create or correct bedtime check-ins.
+  final bool bedtimeCheckInEnabled;
+
+  /// Whether users can create or correct wake-time check-ins.
+  final bool wakeTimeCheckInEnabled;
+
+  RoutinePreferences({
+    this.bedtimeMinutes,
+    this.wakeTimeMinutes,
+    this.foldSleep = false,
+    this.bedtimeCheckInEnabled = true,
+    this.wakeTimeCheckInEnabled = true,
+  }) {
+    if ((bedtimeMinutes != null &&
+            (bedtimeMinutes! < 0 || bedtimeMinutes! >= 1440)) ||
+        (wakeTimeMinutes != null &&
+            (wakeTimeMinutes! < 0 || wakeTimeMinutes! >= 1440)) ||
+        (foldSleep &&
+            (bedtimeMinutes == null ||
+                wakeTimeMinutes == null ||
+                bedtimeMinutes == wakeTimeMinutes))) {
+      throw ArgumentError('Invalid routine preferences');
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'bedtimeMinutes': bedtimeMinutes,
+    'wakeTimeMinutes': wakeTimeMinutes,
+    'foldSleep': foldSleep,
+    'bedtimeCheckInEnabled': bedtimeCheckInEnabled,
+    'wakeTimeCheckInEnabled': wakeTimeCheckInEnabled,
+  };
+
+  factory RoutinePreferences.fromJson(Object? value) {
+    final map = jsonObject(value);
+    jsonRequireFields(map, [
+      'bedtimeMinutes',
+      'wakeTimeMinutes',
+      'foldSleep',
+      'bedtimeCheckInEnabled',
+      'wakeTimeCheckInEnabled',
+    ]);
+    int? minutes(String key) =>
+        map[key] == null ? null : jsonInt(map, key, max: 1439);
+    final bedtime = minutes('bedtimeMinutes');
+    final wakeTime = minutes('wakeTimeMinutes');
+    final foldSleep = jsonBool(map, 'foldSleep');
+    if (foldSleep &&
+        (bedtime == null || wakeTime == null || bedtime == wakeTime)) {
+      throw const FormatException('无效作息折叠设置');
+    }
+    return RoutinePreferences(
+      bedtimeMinutes: bedtime,
+      wakeTimeMinutes: wakeTime,
+      foldSleep: foldSleep,
+      bedtimeCheckInEnabled: jsonBool(map, 'bedtimeCheckInEnabled'),
+      wakeTimeCheckInEnabled: jsonBool(map, 'wakeTimeCheckInEnabled'),
+    );
+  }
+}
+
+/// An immutable snapshot of one self-reported routine check-in.
+class RoutineRecord {
+  /// The stable identifier of this check-in.
+  final String id;
+
+  /// The bedtime or wake-time category of this check-in.
+  final RoutineType type;
+
+  /// The target civil date, stored as a UTC-midnight date carrier.
+  final DateTime targetDate;
+
+  /// The target wall-clock time in minutes after midnight when recorded.
+  final int targetMinutes;
+
+  /// The IANA timezone used to resolve the target time when recorded.
+  final String timezone;
+
+  /// The instant at which the user recorded this check-in.
+  final DateTime recordedAt;
+
+  RoutineRecord({
+    required this.id,
+    required this.type,
+    required this.targetDate,
+    required this.targetMinutes,
+    required this.timezone,
+    required this.recordedAt,
+  }) {
+    if (id.isEmpty ||
+        !targetDate.isUtc ||
+        targetDate.hour != 0 ||
+        targetDate.minute != 0 ||
+        targetDate.second != 0 ||
+        targetDate.millisecond != 0 ||
+        targetDate.microsecond != 0 ||
+        targetMinutes < 0 ||
+        targetMinutes >= 1440 ||
+        timezone.isEmpty ||
+        !recordedAt.isUtc) {
+      throw ArgumentError('Invalid routine record');
+    }
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type.name,
+    'targetDate': targetDate.toIso8601String(),
+    'targetMinutes': targetMinutes,
+    'timezone': timezone,
+    'recordedAt': recordedAt.toIso8601String(),
+  };
+
+  factory RoutineRecord.fromJson(Object? value) {
+    final map = jsonObject(value);
+    jsonRequireFields(map, [
+      'id',
+      'type',
+      'targetDate',
+      'targetMinutes',
+      'timezone',
+      'recordedAt',
+    ]);
+    final targetDate = jsonDate(map, 'targetDate');
+    final recordedAt = jsonDate(map, 'recordedAt');
+    if (targetDate.hour != 0 ||
+        targetDate.minute != 0 ||
+        targetDate.second != 0 ||
+        targetDate.millisecond != 0 ||
+        targetDate.microsecond != 0) {
+      throw const FormatException('无效作息目标日期');
+    }
+    return RoutineRecord(
+      id: jsonString(map, 'id'),
+      type: jsonEnum(map, 'type', RoutineType.values),
+      targetDate: targetDate,
+      targetMinutes: jsonInt(map, 'targetMinutes', max: 1439),
+      timezone: jsonString(map, 'timezone'),
+      recordedAt: recordedAt,
+    );
+  }
+}
+
 // Backup decoding is deliberately strict: no implicit casts, date repair, or defaults.
 Map<String, dynamic> jsonObject(Object? value) {
   if (value is! Map<String, dynamic>) throw const FormatException('应为 JSON 对象');
