@@ -31,22 +31,23 @@ IconData stateIcon(Occurrence occurrence) => switch (occurrence.status) {
   null => Icons.radio_button_unchecked,
 };
 
-void showError(BuildContext context, Object error) {
+void showError(BuildContext context, Object error, {String action = '操作'}) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text('操作未完成：$error')));
+      .showSnackBar(SnackBar(content: Text('$action未完成：$error')));
 }
 
 Future<bool> perform(
   BuildContext context,
-  Future<void> Function() action,
-) async {
+  Future<void> Function() action, {
+  String actionLabel = '操作',
+}) async {
   try {
     await action();
     HapticFeedback.lightImpact();
     return true;
   } catch (error) {
-    if (context.mounted) showError(context, error);
+    if (context.mounted) showError(context, error, action: actionLabel);
     return false;
   }
 }

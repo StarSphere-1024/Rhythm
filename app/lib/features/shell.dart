@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../core/planner.dart';
 import '../core/reminders.dart';
+import 'brand_mark.dart';
 import 'calendar.dart';
 import 'common.dart';
 import 'editor.dart';
@@ -49,10 +50,18 @@ class _RhythmShellState extends State<RhythmShell> {
     animation: widget.planner,
     builder: (context, _) => Scaffold(
       appBar: AppBar(
-        title: Text(
-          ['今日 · 节律', '一周课表', '收集箱', '一周回顾'][_page],
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        title: Row(
+          children: [
+            const BrandMark(size: 32),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                ['今日 · 节律', '周日程', '收集箱', '回顾'][_page],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
         actions: [
           IconButton(
@@ -73,33 +82,30 @@ class _RhythmShellState extends State<RhythmShell> {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          child: KeyedSubtree(
-            key: ValueKey(_page),
-            child: switch (_page) {
-              0 => TodayView(
-                planner: widget.planner,
-                date: _day,
-                onChanged: (value) => setState(() => _day = value),
-                onWeek: () => setState(() {
-                  _week = weekStart(_day);
-                  _page = 1;
-                }),
-              ),
-              1 => WeekView(
-                planner: widget.planner,
-                date: _week,
-                onChanged: (value) => setState(() => _week = value),
-              ),
-              2 => InboxView(planner: widget.planner),
-              _ => ReviewView(
-                planner: widget.planner,
-                date: _reviewWeek,
-                onChanged: (value) => setState(() => _reviewWeek = value),
-              ),
-            },
-          ),
+        child: IndexedStack(
+          index: _page,
+          children: [
+            TodayView(
+              planner: widget.planner,
+              date: _day,
+              onChanged: (value) => setState(() => _day = value),
+              onWeek: () => setState(() {
+                _week = weekStart(_day);
+                _page = 1;
+              }),
+            ),
+            WeekView(
+              planner: widget.planner,
+              date: _week,
+              onChanged: (value) => setState(() => _week = value),
+            ),
+            InboxView(planner: widget.planner),
+            ReviewView(
+              planner: widget.planner,
+              date: _reviewWeek,
+              onChanged: (value) => setState(() => _reviewWeek = value),
+            ),
+          ],
         ),
       ),
       floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
@@ -134,8 +140,8 @@ class _RhythmShellState extends State<RhythmShell> {
                 NavigationDestination(
                   icon: Icon(Icons.view_week_outlined),
                   selectedIcon: Icon(Icons.view_week),
-                  label: '周课表',
-                  tooltip: '七日周课表',
+                  label: '周日程',
+                  tooltip: '七日日程视图',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.inbox_outlined),
