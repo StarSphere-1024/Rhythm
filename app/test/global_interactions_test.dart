@@ -37,6 +37,50 @@ void main() {
     expect(find.text('保留这条输入'), findsOneWidget);
   });
 
+  testWidgets('review keeps task creation clear of routine records', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final planner = Planner.memory(timezone: 'UTC');
+    final reminders = ReminderService(planner);
+    addTearDown(() {
+      reminders.dispose();
+      planner.dispose();
+    });
+    final now = DateTime.now();
+    await planner.saveRoutinePreferences(
+      RoutinePreferences(bedtimeMinutes: 22 * 60),
+    );
+    await planner.recordRoutine(
+      type: RoutineType.bedtime,
+      targetDate: DateTime.utc(now.year, now.month, now.day),
+      recordedAt: now.toUtc(),
+      timezone: 'UTC',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RhythmShell(planner: planner, reminders: reminders),
+      ),
+    );
+    await tester.tap(find.text('回顾').last);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FloatingActionButton), findsNothing);
+    final createButton = find.byTooltip('新建任务');
+    expect(createButton, findsOneWidget);
+    await tester.scrollUntilVisible(find.text('入睡打卡'), 300);
+    expect(find.text('入睡打卡'), findsOneWidget);
+
+    await tester.tap(createButton);
+    await tester.pumpAndSettle();
+    expect(find.byType(TaskEditor), findsOneWidget);
+  });
+
   testWidgets('inbox create failure retains input and retry creates once', (
     tester,
   ) async {

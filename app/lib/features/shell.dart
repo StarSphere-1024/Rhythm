@@ -45,6 +45,11 @@ class _RhythmShellState extends State<RhythmShell> {
     super.dispose();
   }
 
+  void _createTask(BuildContext context) {
+    HapticFeedback.selectionClick();
+    showTaskEditor(context, widget.planner);
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.planner,
@@ -64,6 +69,12 @@ class _RhythmShellState extends State<RhythmShell> {
           ],
         ),
         actions: [
+          if (_page == 3)
+            IconButton(
+              tooltip: '新建任务',
+              icon: const Icon(Icons.add),
+              onPressed: () => _createTask(context),
+            ),
           IconButton(
             tooltip: '设置',
             icon: const Icon(Icons.tune),
@@ -108,14 +119,12 @@ class _RhythmShellState extends State<RhythmShell> {
           ],
         ),
       ),
-      floatingActionButton: MediaQuery.viewInsetsOf(context).bottom > 0
+      floatingActionButton:
+          MediaQuery.viewInsetsOf(context).bottom > 0 || _page == 3
           ? null
           : FloatingActionButton.extended(
               tooltip: '新建任务',
-              onPressed: () {
-                HapticFeedback.selectionClick();
-                showTaskEditor(context, widget.planner);
-              },
+              onPressed: () => _createTask(context),
               icon: const Icon(Icons.add),
               label: const Text('新建'),
             ),
