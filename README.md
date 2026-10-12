@@ -4,9 +4,11 @@ Android 优先的免费、离线日程与执行记录应用。Flutter 工程、�
 
 ## 当前交付与验证范围
 
-已实现今日时间轴、周一至周日七列课表、收集箱、任务编辑、重复规则、打卡/跳过/撤销/改期、执行历史、周回顾、JSON 完整替换恢复和 Android 本地提醒调度。
+已实现今日时间轴、七列周日程（全览 / 标准 / 放大及可选作息折叠）、收集箱、任务编辑、重复规则、打卡 / 跳过 / 撤销 / 改期、执行历史、周回顾、独立作息目标与入睡 / 起床记录、JSON 完整替换恢复和 Android 本地提醒调度。
 
-已通过无桌面 Chromium、真实 SQLite 文件和 Android 11/17 真机验证。Android 11 覆盖后台送达、重启恢复、原生规则/历史/备份及放大字体软键盘，并修复 release 通知图标资源压缩问题；Android 17（API 37）覆盖运行时通知拒绝/允许/撤销、精确闹钟独立授权/撤销与非精确降级，以及重新授权后的后台真实送达。详细证据见 [Android 11 验收](app/docs/android-verification.md)、[Android 17 验收](app/docs/android17-verification.md)；早期 Web 证据见 [验证记录](app/docs/verification.md)。飞行模式按用户选择未执行，也不宣称所有系统版本与设备均已验收。
+第一阶段的 Android 11 / 17 真机及早期 Web 结果是历史证据，不替代第二阶段验收。Android 11 覆盖后台送达、重启恢复、规则 / 历史 / 备份和大字体软键盘；Android 17（API 37）覆盖通知授权、精确闹钟及非精确降级和后台送达。详见 [Android 11 验收](docs/android-verification.md)、[Android 17 验收](docs/android17-verification.md) 和 [第一阶段 Web 验证](docs/verification.md)。飞行模式按用户选择未执行，不推断所有系统均已验收。
+
+第二阶段版本 `0.2.0+2` 已构建三 ABI release APK，并在已连接的 Android 17 / API 37 设备上通过 `adb install -r` 原位更新；设备保持锁屏，本阶段的 Android 页面、启动器 / 主题图标与真实通知尚未完成真机验收。Web 实际操作、截图和未覆盖项见 [第二阶段验证记录](app/docs/phase-two-verification.md)。
 
 Web 是同一套 Flutter 界面的验证入口，不是 Android 通知能力的替代品。Web 的本地存储是浏览器存储；清理站点数据会删除它。Android 使用 SQLite，不以 `shared_preferences` 保存任务或历史。
 
