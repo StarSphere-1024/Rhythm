@@ -17,26 +17,34 @@ void main() {
   runApp(const _Startup());
 }
 
-ThemeData rhythmTheme(Brightness brightness) => ThemeData(
-  useMaterial3: true,
-  brightness: brightness,
-  fontFamily: 'NotoSansSC',
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: const Color(0xff5e8174),
+ThemeData rhythmTheme(
+  Brightness brightness, {
+  Color seedColor = const Color(0xff208d78),
+}) {
+  final colorScheme = ColorScheme.fromSeed(
+    seedColor: seedColor,
     brightness: brightness,
-  ),
-  scaffoldBackgroundColor: brightness == Brightness.light
-      ? const Color(0xfff6f7f2)
-      : const Color(0xff151c19),
-  inputDecorationTheme: const InputDecorationTheme(
-    border: OutlineInputBorder(),
-  ),
-  bottomSheetTheme: const BottomSheetThemeData(
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+  );
+  return ThemeData(
+    useMaterial3: true,
+    brightness: brightness,
+    fontFamily: 'NotoSansSC',
+    colorScheme: colorScheme,
+    scaffoldBackgroundColor: colorScheme.surface,
+    cardTheme: CardThemeData(
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
-  ),
-);
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    bottomSheetTheme: const BottomSheetThemeData(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+    ),
+  );
+}
 
 class RhythmApp extends StatelessWidget {
   const RhythmApp({super.key, required this.planner, required this.reminders});
