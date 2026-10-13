@@ -30,8 +30,8 @@
 
 ## Android 17 设备边界
 
-此前一次设备检查中，`adb install -r` 成功，`pm path org.rhythm.rhythm` 返回已安装 APK，包管理器报告 `versionCode 2002`。本轮最终 release APK 构建成功后，`adb devices -l` 已无设备；`adb mdns services` 仍发现 `_adb-tls-connect` 服务，但连接当时发现的 `192.168.1.249:42785` 失败，因此最新构建未能原位覆盖安装。
-设备先前可连接时，启动尝试及 `adb shell wm dismiss-keyguard` 后屏幕仍停留在锁屏。没有尝试 PIN、凭据绕过、清除数据、重启或改变设备网络。因此本阶段**没有**声称实际观察了 Android 启动器彩色 / 单色图标、壁纸主题着色、Android 真通知小图标、通知送达或设备内应用页面；这些需要设备所有者解锁且恢复 ADB 连接后再验收。APK 构建和先前安装证据不替代运行证据。
+2026-10-13：无线 ADB 成功重连至 Redmi Note 5 Pro Android 17 / API 37（1080×2160 px，440 dpi）。`adb install -r` 成功原位更新最终 arm64 release APK；`pm path` 返回已安装包，APK manifest 为 `org.rhythm.rhythm`、`versionCode 2002`、`versionName 0.2.0`。未卸载、清除应用数据、重启设备或改动网络。
+`adb shell monkey -p org.rhythm.rhythm 1` 返回事件已注入；随后截屏仍显示锁屏（12:33、53% 电量），应用页面不可见。未输入 PIN / 凭据，也未尝试绕过锁屏。锁屏仍遮挡，因此启动器图标主题切换、应用内页面及通知送达本轮仍未实测；APK 构建 / 安装证据不替代运行证据。
 
 同样未实测 Android 真机 TalkBack、系统两倍字号与真实软键盘、横屏短视口、启动器遮罩和通知送达。Widget 测试覆盖 360 dp、小屏编辑、TextScaler 2.0、返回 / 遮罩确认等交互，但不替代这些真机验收。真实 Android 文件选择器、逐页错误态及对比度也未在本次 UI smoke 中实测；Web 实际备份导出 / 取消 / 确认完整替换只证明 Web 路径。相应数据约束、v1 快照迁移、失败写入与 SQLite 重开由自动化测试覆盖。
 

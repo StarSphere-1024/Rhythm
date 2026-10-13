@@ -12,7 +12,7 @@
 - 统一 `ColorScheme` 主题、随主题更新的应用内品牌标识，以及 Android 自适应 / 单色 / 旧版和 Web 图标；提供正式 SVG 源、导出工具与配置说明。
 - 周日程增加全览 / 标准 / 放大三档、睡眠区间折叠 / 展开及完整 24 小时入口；作息偏好与独立入睡 / 起床记录纳入 schema v2 快照，并兼容有效 schema v1。
 - 收敛今日、周日程、收集箱、回顾、任务编辑 / 详情与设置的交互和语义；作息记录不进入普通任务统计，回顾页将新建入口移至标题栏以免遮挡作息记录。
-- `flutter analyze` 无问题，60 项测试通过；Android 三 ABI release 与 Web 构建成功，390×844 / 360×640 Web 操作及截图见 [第二阶段验证记录](app/docs/phase-two-verification.md)。Android 17 曾原位安装 `versionCode 2002`；最终修复后构建成功，但 ADB 连接中断，未能更新装入。设备锁屏及断连使启动器、通知和页面真机验收仍未完成。
+- `flutter analyze` 无问题，60 项测试通过；Android 三 ABI release 与 Web 构建成功，390×844 / 360×640 Web 操作及截图见 [第二阶段验证记录](app/docs/phase-two-verification.md)。Android 17 / API 37 最终 arm64 release 已经无线 ADB 原位更新安装（`versionCode 2002`）；启动后截屏仍停留锁屏，启动器、通知与应用页面真机验收未完成。
 
 ## 真机验证修订 — 2026-10-12
 
