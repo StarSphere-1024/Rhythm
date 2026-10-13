@@ -1,98 +1,159 @@
-# Rhythm · 节律
+<p align="center">
+  <img src="app/assets/icons/rhythm.svg" width="88" alt="节律应用图标">
+</p>
 
-Android 优先的免费、离线日程与执行记录应用。Flutter 工程、代码、测试和详细验收记录位于 `app/`；产品目标见 [docs/goal.md](docs/goal.md)。应用代码采用 [MIT](app/LICENSE) 许可，中文字体采用独立的 OFL 许可。
+<h1 align="center">Rhythm · 节律</h1>
 
-## 当前交付与验证范围
+<p align="center">先收集，再安排；记录行动，也给生活留白。</p>
 
-已实现今日时间轴、七列周日程（全览 / 标准 / 放大及可选作息折叠）、收集箱、任务编辑、重复规则、打卡 / 跳过 / 撤销 / 改期、执行历史、周回顾、独立作息目标与入睡 / 起床记录、JSON 完整替换恢复和 Android 本地提醒调度。
+<p align="center">
+  <strong>Android 优先 · 离线使用 · 无需账号 · 免费开源</strong>
+</p>
 
-第一阶段的 Android 11 / 17 真机及早期 Web 结果是历史证据，不替代第二阶段验收。Android 11 覆盖后台送达、重启恢复、规则 / 历史 / 备份和大字体软键盘；Android 17（API 37）覆盖通知授权、精确闹钟及非精确降级和后台送达。详见 [Android 11 验收](docs/android-verification.md)、[Android 17 验收](docs/android17-verification.md) 和 [第一阶段 Web 验证](docs/verification.md)。飞行模式按用户选择未执行，不推断所有系统均已验收。
+<p align="center">
+  <a href="#界面预览">界面预览</a> ·
+  <a href="#主要功能">主要功能</a> ·
+  <a href="#开始使用">开始使用</a> ·
+  <a href="#本地构建">本地构建</a>
+</p>
 
-第二阶段版本 `0.2.0+2` 已构建三 ABI release APK，并在 Android 17 / API 37 的 Redmi Note 5 Pro 上完成当前阶段真机回归：核心页面浅 / 深色切换、360 dp / 两倍字号 / 真实键盘、原生 JSON 完整替换、通知权限降级和后台提醒送达均已观察。启动器主题图标切换与 TalkBack 仍未覆盖；详见 [第二阶段验证记录](app/docs/phase-two-verification.md)。
+节律是一款面向个人的日程与执行记录应用。把待办放进收集箱，在今日时间轴和一周日程里安排时间，再通过打卡与周回顾看见实际发生的行动。
 
-Web 是同一套 Flutter 界面的验证入口，不是 Android 通知能力的替代品。Web 的本地存储是浏览器存储；清理站点数据会删除它。Android 使用 SQLite，不以 `shared_preferences` 保存任务或历史。
+核心功能在设备本地运行，不需要账号或服务器。应用使用 Flutter 构建，当前版本为 **0.2.0**。
 
-## 开发环境
+## 界面预览
 
-本次实际使用：Linux x64、Flutter 3.47.7 stable、Dart 3.13.5、OpenJDK 21、Android SDK 36。APK 实际 manifest 的最低 Android API 为 24，目标 API 为 36。依赖版本提交在 `pubspec.lock`，复现时使用已验证的 Flutter 版本。
+<table>
+  <tr>
+    <th>今日</th>
+    <th>周日程</th>
+    <th>收集箱</th>
+    <th>回顾</th>
+  </tr>
+  <tr>
+    <td><img src="assets/readme/today.png" width="190" alt="Android 真机深色今日页，包含作息打卡和空白日程入口"></td>
+    <td><img src="assets/readme/week.png" width="190" alt="Android 真机深色周日程，七列展示一周与完整时间轴"></td>
+    <td><img src="assets/readme/inbox.png" width="190" alt="Android 真机深色收集箱，输入名称即可快速收集任务"></td>
+    <td><img src="assets/readme/review.png" width="190" alt="Android 真机深色回顾页，分别显示计划、实际完成与作息记录"></td>
+  </tr>
+</table>
 
-安装 Flutter SDK 和 Android 官方 command-line tools 后：
+以上为当前版本在 Redmi Note 5 Pro（Android 17）上的 ADB 实机截图，仅裁去系统状态栏并等比缩小；不是 Web 截图或设计稿。应用随系统切换浅色与深色主题。
+
+图标使用[原始参考图形的 SVG 源](app/assets/icons/rhythm.svg)：三块时间块顶部对齐，中间最高，右侧较窄，配以下方的完成勾号。应用内只随主题调整配色；Android 自适应图标与 Web maskable 图标仅延展背景以适配系统遮罩，不改变标志几何。
+
+## 主要功能
+
+- **今日时间轴** — 按时间查看安排，完成、跳过、撤销或改期；跨午夜任务分段显示，但仍属于同一次执行。
+- **七列周日程** — 一屏查看整周，支持全览、标准、放大三档视图；可折叠睡眠时段，也可展开完整 24 小时。轻点空白时段即可开始安排。
+- **收集箱** — 只输入名称就能记下任务，之后再安排时间，也可以直接完成未排期任务。
+- **重复计划** — 支持重复规则，以及「仅本次」「本次及以后」「整个系列」三种编辑和删除范围。
+- **执行历史与周回顾** — 区分计划完成与实际完成，保留完成、跳过时的记录；后续修改或删除计划不会改写已有历史。
+- **独立作息记录** — 设置入睡、起床目标，记录、更正或撤销打卡；作息记录不混入普通任务的完成率。
+- **本地提醒与备份** — Android 本地通知提醒；JSON 导出与完整替换恢复，不依赖云端服务。
+
+## 开始使用
+
+1. **先收集**：在收集箱记下任务，不必立即决定日期和时间。
+2. **再安排**：为任务设置时间、分类、重复规则和提醒，或从今日、周日程直接新建。
+3. **记录行动**：完成后打卡；计划改变时可改期或跳过，误操作可以撤销。
+4. **回看一周**：在回顾中查看计划完成率、实际完成次数与独立作息记录。
+
+### 提醒需要授权
+
+Android 通知权限和精确闹钟权限分别授权。未授予通知权限时，规划、打卡和数据保存仍可使用；未授予精确闹钟权限时，提醒会降级为可能延迟的非精确调度。
+
+应用维护未来 30 天的滚动提醒窗口，并在启动、恢复前台和每日后台作业中刷新。**强行停止应用、系统后台限制和厂商省电策略都可能影响送达，不能保证所有设备上始终准点。**
+
+### 数据保存在本地，请定期导出
+
+- Android 使用 **SQLite** 保存任务、规则、执行历史和作息数据，不用偏好设置存储任务或历史。
+- 设置页可导出 JSON 备份。导入前校验数据，并要求确认；**恢复是完整替换，不是合并**，请先导出当前数据。
+- 备份包含计划与记录，但不包含 Android 系统权限；换设备后需要重新授权提醒。
+- 不提供账号、云同步或多人协作。设备内的数据不能替代外部备份。
+
+### 周回顾如何计算
+
+计划按规则原时区的原计划周归属；改期或跨周完成不会迁移该计划的归属。跳过仍计入完成率分母，无计划时不显示百分比。
+
+实际完成按设备本地的执行时间归周，包含收集箱直接完成的任务。既有规则保留创建时的计划时区，不会因设备时区变化重新解释；日历按设备本地时间显示。
+
+## 本地构建
+
+Flutter 工程位于 [`app/`](app/)。以下命令从仓库根目录开始执行。
+
+### 环境
+
+已验证的工具链：**Flutter 3.47.7 stable · Dart 3.13.5 · OpenJDK 21 · Android SDK 36**。Dart SDK 约束为 `^3.13.5`，依赖版本由 `app/pubspec.lock` 固定。
+
+先安装 [Flutter SDK](https://docs.flutter.dev/get-started/install) 和 [Android command-line tools](https://developer.android.com/studio#command-tools)，并运行 `flutter doctor` 检查环境。
+
+### 在 Android 上运行
 
 ```sh
-export ANDROID_SDK_ROOT=/opt/android-sdk
-export PATH="/opt/flutter/bin:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
-flutter config --android-sdk "$ANDROID_SDK_ROOT"
-sdkmanager 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0'
-flutter doctor --android-licenses
-flutter doctor -v
+cd app
+flutter pub get
+flutter devices
+# 将 DEVICE_ID 替换为 flutter devices 列出的 Android 设备 ID
+flutter run -d DEVICE_ID
 ```
 
-Flutter 来源：[flutter/flutter](https://github.com/flutter/flutter)。Android command-line tools：[官方下载](https://developer.android.com/studio#command-tools)。第一次 Android 构建会下载 Gradle、所需 SDK/NDK 组件和依赖；**构建需要网络，安装后的应用核心功能不需要网络或账号。**
+### 构建 APK
 
-以下命令都在 `app/` 中执行：
+在 `app/` 下执行：
 
 ```sh
-flutter pub get
-flutter test
-flutter analyze
-flutter run -d <android-device-id>
 flutter build apk --release --split-per-abi
 ```
 
-在受限容器中，若 Flutter 解压引擎文件时报无法修改属主，可仅为该命令设置 `TAR_OPTIONS=--no-same-owner`。本次 APK 构建使用：
+产物位于 `app/build/app/outputs/flutter-apk/`（相对仓库根目录），分别包含 `armeabi-v7a`、`arm64-v8a` 和 `x86_64` APK；按设备架构选择安装。
+
+> 当前 release 构建仍使用 **debug 签名**，用于侧载验证，不是正式发布签名。正式分发前需配置自己的签名密钥。首次构建需要网络，安装后的核心功能不需要网络或账号。
+
+若容器中仅因引擎解压无法修改属主而失败，可为该次构建添加 `env TAR_OPTIONS=--no-same-owner`；普通环境无需设置。当前 `workmanager_android` 存在未来 Flutter 内置 Kotlin 支持的迁移警告，升级工具链或插件后需重新验证。
+
+### 检查代码
+
+在 `app/` 下执行：
 
 ```sh
-env TAR_OPTIONS=--no-same-owner flutter build apk --release --split-per-abi
+flutter analyze
+flutter test
 ```
 
-APK 位于 `build/app/outputs/flutter-apk/`。**当前 release 构建仍使用开发用 debug 签名，仅供验证与侧载，不是正式发布签名。** 分发正式版本前需提供自己的 Android 签名密钥。
+测试覆盖重复规则、时区与夏令时、编辑范围、历史与统计、备份校验、失败写入、作息记录、日程交互及实际 SQLite 文件持久化。
 
-`workmanager_android` 当前版本在构建中提示未来 Flutter 内置 Kotlin 支持的迁移要求；本次版本可以构建，升级 Flutter/插件时必须重新验证，不能靠关闭检查掩盖该问题。
+<details>
+<summary>可选：通过浏览器预览</summary>
 
-## 无桌面页面验证
-
-不安装、不启动 Android 模拟器。先构建包含本地 Flutter Web 资源的实际应用：
+在 `app/` 下执行：
 
 ```sh
 flutter build web --target lib/main.dart --no-web-resources-cdn --no-wasm-dry-run
 python3 -m http.server 18080 --directory build/web
 ```
 
-另一个终端启动真实无界面浏览器，并让自动化工具连接 CDP：
+打开 <http://127.0.0.1:18080/>。Web 是界面预览入口，不支持 Android 本地提醒；数据保存在浏览器中，清除站点数据会删除它。当前不提供离线冷启动的 Web PWA，不能用 Web 预览替代 Android 原生能力验证。
 
-```sh
-chromium --headless=new --no-sandbox --disable-dev-shm-usage \
-  --remote-debugging-port=19222 --remote-allow-origins='*' \
-  --user-data-dir=/tmp/rhythm-validation-chromium about:blank
+</details>
+
+## 项目结构
+
+```text
+app/
+├── lib/
+│   ├── core/          # 模型、重复规则、Planner、存储与提醒
+│   ├── features/      # 今日、周日程、收集箱、回顾、编辑与设置
+│   └── main.dart      # 启动与主题
+├── test/              # 业务、界面交互与 SQLite 测试
+├── android/           # Android 平台配置
+├── web/               # Web 预览入口
+└── assets/            # 应用图标与中文字体
+assets/readme/         # README 专用真机截图
 ```
 
-`--no-sandbox` 仅用于此隔离容器，不应作为普通桌面浏览器的默认配置。页面地址为 `http://127.0.0.1:18080/`。本次采用 390×844 CSS 像素视口、真实点击/键盘输入/文件选择/下载，并截图核对；在页面资源加载后通过 CDP 断网继续操作。浏览器冷启动离线加载网页不在此证明范围内，本应用没有把 Web 包装成离线 PWA。
+业务数据统一由 `Planner` 管理：变更串行写入，持久化成功后才更新界面；写入失败保留原状态。日程按查询窗口计算，不预生成多年实例，提醒与界面使用同一套计划数据。
 
-两倍字体验证使用临时入口，加载同一个 `Planner`、`ReminderService` 和 `RhythmShell`，仅在 `MediaQuery` 中设置 `TextScaler.linear(2)`；验证后已移除临时入口。390×500 的缩短视口验证滚动保存入口可访问，**不等同于 Android 真实软键盘测试**。
+## 开源许可
 
-## 数据与时间约定
-
-- `core/models.dart`：任务、版本化日程规则、单次覆盖和不可变执行快照。
-- `core/recurrence.dart`：按查询窗口计算实例；不预生成多年数据。实例身份来自规则 ID 与原计划 UTC 时刻，改期不产生新身份。
-- `core/planner.dart`：唯一状态源与串行事务入口。持久化成功后才发布状态；失败保留原状态，后续操作仍可继续。
-- `core/snapshot_store.dart`：Android SQLite 内单文档事务存储，使用 WAL 与 FULL 同步；Web 为单文档浏览器存储。此规模采用直接 SQLite，不另建 ORM/状态管理/路由层。
-- `core/reminders.dart`：根据同一批实例重建通知，不保存第二套业务日程。
-- `features/`：实际四个页面、任务面板与设置；主题跟随系统，动作提供轻量触感。
-
-新规则默认使用首次成功读取的设备时区；读取失败使用并记录 UTC 回退，设置页可选择计划时区。**既有规则保留其创建时区的墙上时间，不随旅行或设备时区改变重新解释。** 日历视图和执行时间按当前设备本地时间显示。
-
-夏令时重复时段采用较早的合法时刻；不存在的墙上时间推进到该缺口结束后的首个合法时刻。时长是实际经过的分钟数，因此跨 DST 的结束墙上时间可能不等于简单的钟面加法。
-
-周回顾中，计划次数按规则原时区的原计划周计算，改期和跨周完成不迁移该分母。跳过仍在分母中；完成率仅计算该计划周的计划完成数。实际完成次数按设备本地的实际执行周计算，包含未排期打卡。无计划时不显示百分比。执行记录保留当时的名称、分类、计划时间及实际时间，后续编辑或删除不改写已有完成/跳过快照。
-
-仅本次修改保存为覆盖；本次及以后产生规则版本；整个系列沿用系列原始日期锚点。删除取消未执行日程并保留执行历史，而不是级联删除历史。
-
-## 提醒与备份
-
-Android 提醒需要通知权限；精确闹钟权限单独请求。没有精确权限时显式降级为系统允许的非精确提醒，设置页显示可能延迟；没有通知权限不影响核心业务。
-
-调度窗口为未来 30 天，由每日 WorkManager 作业及应用启动/恢复前台刷新，插件 boot receiver 恢复已排闹钟。执行、跳过、改期和备份恢复会触发重建。Android 的强行停止、厂商省电策略、后台作业延迟会影响提醒，不能保证任意设备下的无限期准点送达。Web 明确显示提醒不受支持，但仍保留规则中的提醒配置。
-
-JSON 包含任务、版本规则、单次变更、执行历史、分类和计划时区设置。导入先校验类型、身份和关系，再完整替换；无合并或样例填充。覆盖确认支持取消和先导出当前数据。Android 系统权限不是应用备份数据，换设备后仍需自行授权。设备数据不可替代外部备份，建议定期导出。
-
-中文字体来自 [Noto CJK](https://github.com/notofonts/noto-cjk)，许可证见 [app/assets/fonts/OFL.txt](app/assets/fonts/OFL.txt)；应用设置中也可查看开源许可。
+应用代码采用 [MIT License](LICENSE)。中文字体来自 [Noto CJK](https://github.com/notofonts/noto-cjk)，采用独立的 [SIL Open Font License](app/assets/fonts/OFL.txt)。第三方依赖许可也可在应用设置中查看。

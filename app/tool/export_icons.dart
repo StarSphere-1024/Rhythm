@@ -22,6 +22,8 @@ class _Artwork {
   const _Artwork({
     required this.background,
     required this.foreground,
+    required this.backgroundRect,
+    required this.checkColor,
     required this.blocks,
     required this.check,
     required this.strokeWidth,
@@ -29,6 +31,8 @@ class _Artwork {
 
   final List<int> background;
   final List<int> foreground;
+  final _Rect backgroundRect;
+  final List<int> checkColor;
   final List<_Rect> blocks;
   final List<_Point> check;
   final double strokeWidth;
@@ -42,21 +46,24 @@ Future<void> main() async {
     return;
   }
   final artwork = _parseArtwork(await source.readAsString());
-  final outputs = <(int, String)>[
-    (48, 'android/app/src/main/res/mipmap-mdpi/ic_launcher.png'),
-    (72, 'android/app/src/main/res/mipmap-hdpi/ic_launcher.png'),
-    (96, 'android/app/src/main/res/mipmap-xhdpi/ic_launcher.png'),
-    (144, 'android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png'),
-    (192, 'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png'),
-    (32, 'web/favicon.png'),
-    (192, 'web/icons/Icon-192.png'),
-    (512, 'web/icons/Icon-512.png'),
-    (192, 'web/icons/Icon-maskable-192.png'),
-    (512, 'web/icons/Icon-maskable-512.png'),
+  final outputs = <(int, String, bool)>[
+    (48, 'android/app/src/main/res/mipmap-mdpi/ic_launcher.png', false),
+    (72, 'android/app/src/main/res/mipmap-hdpi/ic_launcher.png', false),
+    (96, 'android/app/src/main/res/mipmap-xhdpi/ic_launcher.png', false),
+    (144, 'android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png', false),
+    (192, 'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png', false),
+    (32, 'web/favicon.png', false),
+    (192, 'web/icons/Icon-192.png', false),
+    (512, 'web/icons/Icon-512.png', false),
+    (192, 'web/icons/Icon-maskable-192.png', true),
+    (512, 'web/icons/Icon-maskable-512.png', true),
   ];
-  final images = <int, Uint8List>{};
-  for (final (size, path) in outputs) {
-    final image = images.putIfAbsent(size, () => _renderPng(artwork, size));
+  final images = <(int, bool), Uint8List>{};
+  for (final (size, path, maskable) in outputs) {
+    final image = images.putIfAbsent((
+      size,
+      maskable,
+    ), () => _renderPng(artwork, size, maskable: maskable));
     await File(path).writeAsBytes(image);
     stdout.writeln('$path (${size}x$size)');
   }
@@ -64,8 +71,8 @@ Future<void> main() async {
 
 _Artwork _parseArtwork(String source) {
   final viewBox = RegExp(r'<svg\b[^>]*\bviewBox="([^"]+)"').firstMatch(source);
-  if (viewBox?.group(1) != '0 0 108 108') {
-    throw const FormatException('Expected a 108 x 108 SVG viewBox.');
+  if (viewBox?.group(1) != '0 0 100 100') {
+    throw const FormatException('Expected a 100 x 100 SVG viewBox.');
   }
   final backgroundGroup = _group(source, 'background');
   final foregroundGroup = _group(source, 'foreground');
@@ -73,17 +80,18 @@ _Artwork _parseArtwork(String source) {
       .allMatches(backgroundGroup)
       .toList();
   if (backgroundRects.length != 1) {
-    throw const FormatException('Expected one full-canvas background rect.');
+    throw const FormatException('Expected one rounded background rect.');
   }
   final backgroundAttrs = _attributes(backgroundRects.single.group(1)!);
-  if ((double.tryParse(backgroundAttrs['x'] ?? '0') != 0) ||
-      (double.tryParse(backgroundAttrs['y'] ?? '0') != 0) ||
-      double.tryParse(backgroundAttrs['width'] ?? '') != 108 ||
-      double.tryParse(backgroundAttrs['height'] ?? '') != 108) {
-    throw const FormatException(
-      'Background rect must fill the 108-unit canvas.',
-    );
-  }
+  final backgroundRect = _Rect(
+    double.parse(backgroundAttrs['x']!),
+    double.parse(backgroundAttrs['y']!),
+    double.parse(backgroundAttrs['x']!) +
+        double.parse(backgroundAttrs['width']!),
+    double.parse(backgroundAttrs['y']!) +
+        double.parse(backgroundAttrs['height']!),
+    double.parse(backgroundAttrs['rx']!),
+  );
   final background = _hexColor(backgroundAttrs['fill']!);
   final foregroundGroupAttrs = _attributes(
     RegExp(r'<g\b([^>]*)>').firstMatch(foregroundGroup)!.group(1)!,
@@ -117,12 +125,17 @@ _Artwork _parseArtwork(String source) {
   final checkAttrs = _attributes(paths.single.group(1)!);
   if (checkAttrs['stroke-linecap'] != 'round' ||
       checkAttrs['stroke-linejoin'] != 'round' ||
-      checkAttrs['fill'] != 'none' ||
-      checkAttrs['stroke']?.toLowerCase() !=
-          foregroundGroupAttrs['fill']?.toLowerCase()) {
-    throw const FormatException(
-      'Check must be a foreground-color rounded stroke.',
-    );
+      checkAttrs['fill'] != 'none') {
+    throw const FormatException('Check must be an unfilled rounded stroke.');
+  }
+  final checkColor = _hexColor(checkAttrs['stroke']!);
+  const number = r'[-+]?(?:\d*\.\d+|\d+\.?\d*)';
+  if (!RegExp(
+    '^M\\s*$number[\\s,]+$number\\s+'
+    'L\\s*$number[\\s,]+$number\\s+'
+    'L\\s*$number[\\s,]+$number\\s*\$',
+  ).hasMatch(checkAttrs['d']!)) {
+    throw const FormatException('Expected a three-point M/L check path.');
   }
   final coordinates = RegExp(r'[-+]?(?:\d*\.\d+|\d+\.?\d*)')
       .allMatches(checkAttrs['d']!)
@@ -138,6 +151,8 @@ _Artwork _parseArtwork(String source) {
   return _Artwork(
     background: background,
     foreground: foregroundColor,
+    backgroundRect: backgroundRect,
+    checkColor: checkColor,
     blocks: blocks,
     check: check,
     strokeWidth: double.parse(checkAttrs['stroke-width']!),
@@ -168,41 +183,62 @@ List<int> _hexColor(String value) {
   ];
 }
 
-Uint8List _renderPng(_Artwork artwork, int size) {
+Uint8List _renderPng(_Artwork artwork, int size, {required bool maskable}) {
   final rgba = Uint8List(size * size * 4);
-  final scale = 108 / size;
+  final scale = 100 / size;
+  const sampleCount = _samplesPerAxis * _samplesPerAxis;
   for (var y = 0; y < size; y++) {
     for (var x = 0; x < size; x++) {
-      var covered = 0;
+      var backgroundSamples = 0;
+      var blockSamples = 0;
+      var checkSamples = 0;
       for (var sy = 0; sy < _samplesPerAxis; sy++) {
         for (var sx = 0; sx < _samplesPerAxis; sx++) {
           final px = (x + (sx + 0.5) / _samplesPerAxis) * scale;
           final py = (y + (sy + 0.5) / _samplesPerAxis) * scale;
-          if (_isForeground(artwork, px, py)) covered++;
+          if (_isCheck(artwork, px, py)) {
+            checkSamples++;
+          } else if (_isBlock(artwork, px, py)) {
+            blockSamples++;
+          } else if (maskable ||
+              _containsRect(artwork.backgroundRect, px, py)) {
+            backgroundSamples++;
+          }
         }
       }
-      final coverage = covered / (_samplesPerAxis * _samplesPerAxis);
+      final covered = backgroundSamples + blockSamples + checkSamples;
       final offset = (y * size + x) * 4;
+      if (covered == 0) continue;
       for (var channel = 0; channel < 3; channel++) {
         rgba[offset + channel] =
-            (artwork.background[channel] * (1 - coverage) +
-                    artwork.foreground[channel] * coverage)
+            ((artwork.background[channel] * backgroundSamples +
+                        artwork.foreground[channel] * blockSamples +
+                        artwork.checkColor[channel] * checkSamples) /
+                    covered)
                 .round();
       }
-      rgba[offset + 3] = 255;
+      rgba[offset + 3] = (255 * covered / sampleCount).round();
     }
   }
   return _encodePng(size, size, rgba);
 }
 
-bool _isForeground(_Artwork artwork, double x, double y) {
-  for (final rect in artwork.blocks) {
-    final closestX = x.clamp(rect.left + rect.radius, rect.right - rect.radius);
-    final closestY = y.clamp(rect.top + rect.radius, rect.bottom - rect.radius);
-    final dx = x - closestX;
-    final dy = y - closestY;
-    if (dx * dx + dy * dy <= rect.radius * rect.radius) return true;
+bool _containsRect(_Rect rect, double x, double y) {
+  final closestX = x.clamp(rect.left + rect.radius, rect.right - rect.radius);
+  final closestY = y.clamp(rect.top + rect.radius, rect.bottom - rect.radius);
+  final dx = x - closestX;
+  final dy = y - closestY;
+  return dx * dx + dy * dy <= rect.radius * rect.radius;
+}
+
+bool _isBlock(_Artwork artwork, double x, double y) {
+  for (var i = 0; i < artwork.blocks.length; i++) {
+    if (_containsRect(artwork.blocks[i], x, y)) return true;
   }
+  return false;
+}
+
+bool _isCheck(_Artwork artwork, double x, double y) {
   final radius = artwork.strokeWidth / 2;
   for (var i = 0; i < artwork.check.length - 1; i++) {
     final start = artwork.check[i];

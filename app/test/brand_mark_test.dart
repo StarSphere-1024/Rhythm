@@ -106,4 +106,95 @@ void main() {
     expect(before, isNot(recolored));
     expect(recolored, isNot(dark));
   });
+
+  testWidgets('brand mark retains the original padded silhouette', (
+    tester,
+  ) async {
+    const boundaryKey = Key('brand-mark-silhouette');
+
+    for (final brightness in Brightness.values) {
+      final theme = rhythmTheme(brightness);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            body: Center(
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: BrandMark(size: 100),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(boundaryKey),
+      );
+      final bytes = (await tester.runAsync(() async {
+        final image = await boundary.toImage(pixelRatio: 1);
+        try {
+          return await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+        } finally {
+          image.dispose();
+        }
+      }))!;
+
+      Color pixel(int x, int y) {
+        final offset = (y * 100 + x) * 4;
+        return Color.fromARGB(
+          bytes.getUint8(offset + 3),
+          bytes.getUint8(offset),
+          bytes.getUint8(offset + 1),
+          bytes.getUint8(offset + 2),
+        );
+      }
+
+      final foreground = theme.colorScheme.onPrimaryContainer;
+      final background = theme.colorScheme.primaryContainer;
+      for (final point in const [
+        Offset(34, 32),
+        Offset(51, 32),
+        Offset(67, 32),
+        Offset(50, 52),
+        Offset(70, 40),
+        Offset(30, 67),
+        Offset(43, 74),
+        Offset(60, 60),
+      ]) {
+        expect(
+          pixel(point.dx.toInt(), point.dy.toInt()),
+          foreground,
+          reason: '$brightness: foreground at $point',
+        );
+      }
+      for (final point in const [
+        Offset(34, 48),
+        Offset(67, 24),
+        Offset(75, 35),
+        Offset(42, 81),
+        Offset(50, 20),
+      ]) {
+        expect(
+          pixel(point.dx.toInt(), point.dy.toInt()),
+          background,
+          reason: '$brightness: empty tile at $point',
+        );
+      }
+      for (final point in const [
+        Offset(50, 10),
+        Offset(10, 50),
+        Offset(90, 50),
+        Offset(50, 90),
+        Offset(16, 16),
+      ]) {
+        expect(
+          pixel(point.dx.toInt(), point.dy.toInt()).a,
+          0,
+          reason: '$brightness: transparent inset or rounded corner at $point',
+        );
+      }
+    }
+  });
 }

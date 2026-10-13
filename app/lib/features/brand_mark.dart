@@ -32,43 +32,48 @@ class _BrandMarkPainter extends CustomPainter {
   final Color background;
   final Color foreground;
 
+  static final _tile = RRect.fromRectAndRadius(
+    const Rect.fromLTWH(15, 15, 70, 70),
+    const Radius.circular(19),
+  );
+  static final _bars = [
+    RRect.fromRectAndRadius(
+      const Rect.fromLTWH(29, 28, 12, 16),
+      const Radius.circular(4),
+    ),
+    RRect.fromRectAndRadius(
+      const Rect.fromLTWH(46, 28, 12, 28),
+      const Radius.circular(4),
+    ),
+    RRect.fromRectAndRadius(
+      const Rect.fromLTWH(63, 28, 9, 21),
+      const Radius.circular(4),
+    ),
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
-    final scale = size.width / 108;
+    canvas.save();
+    canvas.scale(size.width / 100);
     final backgroundPaint = Paint()..color = background;
     final foregroundPaint = Paint()..color = foreground;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(24 * scale)),
-      backgroundPaint,
-    );
-    for (final rect in const [
-      Rect.fromLTRB(24, 34, 38, 56),
-      Rect.fromLTRB(47, 27, 61, 56),
-      Rect.fromLTRB(70, 20, 84, 56),
-    ]) {
-      final scaled = Rect.fromLTRB(
-        rect.left * scale,
-        rect.top * scale,
-        rect.right * scale,
-        rect.bottom * scale,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(scaled, Radius.circular(7 * scale)),
-        foregroundPaint,
-      );
+    canvas.drawRRect(_tile, backgroundPaint);
+    for (final bar in _bars) {
+      canvas.drawRRect(bar, foregroundPaint);
     }
     canvas.drawLine(
-      Offset(32 * scale, 69 * scale),
-      Offset(45 * scale, 82 * scale),
+      const Offset(29, 66),
+      const Offset(43, 75),
       foregroundPaint
-        ..strokeWidth = 8 * scale
+        ..strokeWidth = 7
         ..strokeCap = StrokeCap.round,
     );
     canvas.drawLine(
-      Offset(45 * scale, 82 * scale),
-      Offset(76 * scale, 61 * scale),
+      const Offset(43, 75),
+      const Offset(70, 51),
       foregroundPaint,
     );
+    canvas.restore();
   }
 
   @override
