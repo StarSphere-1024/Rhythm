@@ -8,7 +8,7 @@ Android 优先的免费、离线日程与执行记录应用。Flutter 工程、�
 
 第一阶段的 Android 11 / 17 真机及早期 Web 结果是历史证据，不替代第二阶段验收。Android 11 覆盖后台送达、重启恢复、规则 / 历史 / 备份和大字体软键盘；Android 17（API 37）覆盖通知授权、精确闹钟及非精确降级和后台送达。详见 [Android 11 验收](docs/android-verification.md)、[Android 17 验收](docs/android17-verification.md) 和 [第一阶段 Web 验证](docs/verification.md)。飞行模式按用户选择未执行，不推断所有系统均已验收。
 
-第二阶段版本 `0.2.0+2` 已构建三 ABI release APK，并在已连接的 Android 17 / API 37 设备上通过 `adb install -r` 原位更新；设备保持锁屏，本阶段的 Android 页面、启动器 / 主题图标与真实通知尚未完成真机验收。Web 实际操作、截图和未覆盖项见 [第二阶段验证记录](app/docs/phase-two-verification.md)。
+第二阶段版本 `0.2.0+2` 已构建三 ABI release APK，并在 Android 17 / API 37 的 Redmi Note 5 Pro 上完成当前阶段真机回归：核心页面浅 / 深色切换、360 dp / 两倍字号 / 真实键盘、原生 JSON 完整替换、通知权限降级和后台提醒送达均已观察。启动器主题图标切换与 TalkBack 仍未覆盖；详见 [第二阶段验证记录](app/docs/phase-two-verification.md)。
 
 Web 是同一套 Flutter 界面的验证入口，不是 Android 通知能力的替代品。Web 的本地存储是浏览器存储；清理站点数据会删除它。Android 使用 SQLite，不以 `shared_preferences` 保存任务或历史。
 
