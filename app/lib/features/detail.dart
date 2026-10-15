@@ -52,7 +52,7 @@ class _TaskDetailState extends State<_TaskDetail> {
     }
   }
 
-  Future<void> _edit() async {
+  Future<void> _edit({bool schedule = false}) async {
     final scope = _repeating
         ? await chooseScope(context, verb: '编辑')
         : EditScope.entireSeries;
@@ -66,6 +66,7 @@ class _TaskDetailState extends State<_TaskDetail> {
         task: widget.task,
         occurrence: widget.occurrence,
         scope: scope,
+        schedule: schedule,
       );
     }
   }
@@ -239,10 +240,16 @@ class _TaskDetailState extends State<_TaskDetail> {
                   label: const Text('主动跳过本次'),
                 ),
               ],
+              if (occurrence == null)
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _edit(schedule: true),
+                  icon: const Icon(Icons.event_outlined),
+                  label: const Text('安排时间'),
+                ),
               OutlinedButton.icon(
                 onPressed: _busy ? null : _edit,
                 icon: const Icon(Icons.edit_outlined),
-                label: Text(occurrence == null ? '编辑 / 安排到日历' : '编辑任务'),
+                label: const Text('编辑任务'),
               ),
               TextButton.icon(
                 onPressed: _busy ? null : _delete,

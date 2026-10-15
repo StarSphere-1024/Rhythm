@@ -2,12 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:flutter_timezone/flutter_timezone.dart';
-import 'package:timezone/timezone.dart' as tz;
-
 import '../core/models.dart';
 import '../core/planner.dart';
-import '../core/recurrence.dart';
 import 'common.dart';
 import 'detail.dart';
 import 'editor.dart';
@@ -69,43 +65,6 @@ class _TodayViewState extends State<TodayView> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureNowVisible());
   }
 
-  String _routineRecordLabel(RoutineRecord record) {
-    final targetWall = DateTime.utc(
-      record.targetDate.year,
-      record.targetDate.month,
-      record.targetDate.day,
-      record.targetMinutes ~/ 60,
-      record.targetMinutes % 60,
-    );
-    final targetInstant = Recurrence.resolve(targetWall, record.timezone);
-    final difference = record.recordedAt.difference(targetInstant).inMinutes;
-    final comparison = difference < 0
-        ? '提前${-difference}分'
-        : difference > 0
-        ? '晚于目标$difference分'
-        : '正好';
-    final recorded = record.recordedAt.toLocal();
-    final targetTime = DateTime(
-      2000,
-      1,
-      1,
-      record.targetMinutes ~/ 60,
-      record.targetMinutes % 60,
-    );
-    return '${dateLabel(record.targetDate)} · 目标 ${timeLabel(targetTime)} · 记录 ${dateLabel(recorded)} ${timeLabel(recorded)} · $comparison';
-  }
-
-  Future<String?> _deviceTimezone(BuildContext context) async {
-    try {
-      final zone = (await FlutterTimezone.getLocalTimezone()).identifier;
-      Recurrence.location(zone);
-      return zone;
-    } catch (error) {
-      if (context.mounted) showError(context, error);
-      return null;
-    }
-  }
-
   void _returnToNow() {
     final today = dayStart(DateTime.now());
     if (dayStart(date) == today) {
@@ -116,202 +75,6 @@ class _TodayViewState extends State<TodayView> {
         WidgetsBinding.instance.addPostFrameCallback((_) => _jumpNearNow());
       });
     }
-  }
-
-  DateTime _nearestTargetDate(int minutes, tz.TZDateTime now) {
-    final choices = [
-      for (final offset in [-1, 0, 1])
-        tz.TZDateTime(
-          now.location,
-          now.year,
-          now.month,
-          now.day + offset,
-          minutes ~/ 60,
-          minutes % 60,
-        ),
-    ];
-    final nearest = choices.reduce(
-      (a, b) =>
-          a.difference(now).inMicroseconds.abs() <=
-              b.difference(now).inMicroseconds.abs()
-          ? a
-          : b,
-    );
-    return DateTime(nearest.year, nearest.month, nearest.day);
-  }
-
-  int? _targetMinutes(RoutineType type) => switch (type) {
-    RoutineType.bedtime => planner.routinePreferences.bedtimeMinutes,
-    RoutineType.wakeTime => planner.routinePreferences.wakeTimeMinutes,
-  };
-
-  Future<void> _checkIn(BuildContext context, RoutineType type) async {
-    final target = _targetMinutes(type);
-    if (target == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先在作息设置中设置对应目标时间，再进行打卡。')));
-      return;
-    }
-    final zone = await _deviceTimezone(context);
-    if (zone == null || !context.mounted) return;
-    final now = tz.TZDateTime.now(Recurrence.location(zone));
-    final date = _nearestTargetDate(target, now);
-    await perform(
-      context,
-      () => planner.recordRoutine(
-        type: type,
-        targetDate: DateTime.utc(date.year, date.month, date.day),
-        recordedAt: now.toUtc(),
-        timezone: zone,
-      ),
-    );
-  }
-
-  Future<void> _editRoutine(BuildContext context, RoutineType type) async {
-    final target = _targetMinutes(type);
-    if (target == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先在作息设置中设置对应目标时间，再进行补记。')));
-      return;
-    }
-    final zone = await _deviceTimezone(context);
-    if (zone == null || !context.mounted) return;
-    final now = tz.TZDateTime.now(Recurrence.location(zone));
-    final targetDate = _nearestTargetDate(target, now);
-    final targetDateSelected = await showDatePicker(
-      context: context,
-      initialDate: targetDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100, 12, 31),
-      helpText: '选择目标日期',
-    );
-    if (targetDateSelected == null || !context.mounted) return;
-    final recordedDateSelected = await showDatePicker(
-      context: context,
-      initialDate: DateTime(now.year, now.month, now.day),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100, 12, 31),
-      helpText: '选择实际记录日期',
-    );
-    if (recordedDateSelected == null || !context.mounted) return;
-    final selectedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(now),
-      helpText: '选择记录时间',
-    );
-    if (selectedTime == null || !context.mounted) return;
-    final recordedWall = DateTime.utc(
-      recordedDateSelected.year,
-      recordedDateSelected.month,
-      recordedDateSelected.day,
-      selectedTime.hour,
-      selectedTime.minute,
-    );
-    final recordedAt = Recurrence.resolve(recordedWall, zone);
-    Future<bool> save() => perform(
-      context,
-      () => planner.recordRoutine(
-        type: type,
-        targetDate: DateTime.utc(
-          targetDateSelected.year,
-          targetDateSelected.month,
-          targetDateSelected.day,
-        ),
-        recordedAt: recordedAt,
-        timezone: zone,
-      ),
-    );
-    if (await save() || !context.mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('作息记录未保存'),
-        content: Text(
-          '已保留目标日期 ${dateLabel(targetDateSelected)} 与记录时间 ${dateLabel(recordedDateSelected)} ${selectedTime.format(context)}。可以重试或关闭。',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('关闭'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (await save() && dialogContext.mounted) {
-                Navigator.pop(dialogContext);
-              }
-            },
-            child: const Text('重试'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _routineCard(BuildContext context) {
-    final prefs = planner.routinePreferences;
-    final records = planner.routineRecords;
-    Widget entry(RoutineType type, String name, bool enabled) {
-      if (!enabled) return const SizedBox.shrink();
-      final matching = records.where((record) => record.type == type).toList()
-        ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
-      final latest = matching.isEmpty ? null : matching.first;
-      final targetMinutes = type == RoutineType.bedtime
-          ? prefs.bedtimeMinutes
-          : prefs.wakeTimeMinutes;
-      return Row(
-        children: [
-          Expanded(
-            child: Text(
-              latest == null
-                  ? '$name · ${targetMinutes == null ? '目标未设置' : '未记录'}'
-                  : '$name · ${_routineRecordLabel(latest)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-          TextButton(
-            onPressed: () => _checkIn(context, type),
-            child: Text('$name打卡'),
-          ),
-          IconButton(
-            tooltip: '补记或更正$name打卡',
-            onPressed: () => _editRoutine(context, type),
-            icon: const Icon(Icons.edit_calendar_outlined, size: 20),
-          ),
-          if (latest != null)
-            IconButton(
-              tooltip: '撤销$name打卡',
-              onPressed: () =>
-                  perform(context, () => planner.undoRoutine(latest)),
-              icon: const Icon(Icons.undo, size: 20),
-            ),
-        ],
-      );
-    }
-
-    if (!prefs.bedtimeCheckInEnabled && !prefs.wakeTimeCheckInEnabled) {
-      return const SizedBox.shrink();
-    }
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.nights_stay_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text('作息打卡', style: Theme.of(context).textTheme.labelLarge),
-              ],
-            ),
-            entry(RoutineType.bedtime, '入睡', prefs.bedtimeCheckInEnabled),
-            entry(RoutineType.wakeTime, '起床', prefs.wakeTimeCheckInEnabled),
-          ],
-        ),
-      ),
-    );
   }
 
   void _positionOnFirstVisit(bool today, List<Occurrence> items) {
@@ -371,21 +134,38 @@ class _TodayViewState extends State<TodayView> {
               ],
             ),
           ),
-          _routineCard(context),
           Expanded(
             child: items.isEmpty
                 ? EmptyState(
                     icon: Icons.wb_sunny_outlined,
-                    title: '这一天，留白也很好',
-                    message: '点击新建安排任务，或从收集箱开始。左右滑动可切换日期。',
-                    action: OutlinedButton.icon(
-                      onPressed: () => showTaskEditor(
-                        context,
-                        planner,
-                        preset: DateTime(date.year, date.month, date.day, 9),
-                      ),
-                      icon: const Icon(Icons.add),
-                      label: const Text('安排这一天'),
+                    title: '这一天还没有安排',
+                    message: '先收集想做的事，或为这一天安排任务。左右滑动可切换日期。',
+                    action: Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => showTaskEditor(context, planner),
+                          icon: const Icon(Icons.inbox_outlined),
+                          label: const Text('先收集任务'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () => showTaskEditor(
+                            context,
+                            planner,
+                            schedule: true,
+                            preset: DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              9,
+                            ),
+                          ),
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: const Text('安排这一天'),
+                        ),
+                      ],
                     ),
                   )
                 : ListView(
@@ -680,7 +460,7 @@ class _WeekViewState extends State<WeekView> {
   }
 
   List<_TimeBand> _bands() {
-    final prefs = widget.planner.routinePreferences;
+    final prefs = widget.planner.sleepDisplayPreferences;
     final bedtime = prefs.bedtimeMinutes;
     final wake = prefs.wakeTimeMinutes;
     if (_allHours ||
@@ -810,10 +590,17 @@ class _WeekViewState extends State<WeekView> {
             children: [
               Expanded(
                 child: Text(
-                  widget.planner.routinePreferences.bedtimeMinutes != null &&
-                          widget.planner.routinePreferences.bedtimeMinutes ==
-                              widget.planner.routinePreferences.wakeTimeMinutes
-                      ? '入睡与起床时间相同，暂不折叠'
+                  widget.planner.sleepDisplayPreferences.bedtimeMinutes !=
+                              null &&
+                          widget
+                                  .planner
+                                  .sleepDisplayPreferences
+                                  .bedtimeMinutes ==
+                              widget
+                                  .planner
+                                  .sleepDisplayPreferences
+                                  .wakeTimeMinutes
+                      ? '睡眠显示边界相同，暂不折叠'
                       : '轻触空白选择日期与时间，再点「在此新建」 · 设备本地时间',
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
@@ -844,10 +631,10 @@ class _WeekViewState extends State<WeekView> {
                 onPressed: () => _agenda(context, occurrences),
                 icon: const Icon(Icons.format_list_bulleted),
               ),
-              if (widget.planner.routinePreferences.foldSleep)
+              if (widget.planner.sleepDisplayPreferences.foldSleep)
                 TextButton(
                   onPressed: () => _changeScale(() => _allHours = !_allHours),
-                  child: Text(_allHours ? '按作息折叠' : '完整24小时'),
+                  child: Text(_allHours ? '折叠睡眠时段' : '完整24小时'),
                 ),
             ],
           ),
@@ -893,6 +680,7 @@ class _WeekViewState extends State<WeekView> {
                   onPressed: () => showTaskEditor(
                     context,
                     widget.planner,
+                    schedule: true,
                     preset: _selected,
                   ),
                   child: const Text('在此新建'),
@@ -1288,6 +1076,7 @@ class _DayColumn extends StatelessWidget {
                       onLongPress: () => showTaskEditor(
                         context,
                         planner,
+                        schedule: true,
                         preset: DateTime(
                           date.year,
                           date.month,
@@ -1323,6 +1112,7 @@ class _DayColumn extends StatelessWidget {
                           showTaskEditor(
                             context,
                             planner,
+                            schedule: true,
                             preset: DateTime(
                               date.year,
                               date.month,

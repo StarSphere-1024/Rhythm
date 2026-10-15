@@ -47,7 +47,18 @@ class _RhythmShellState extends State<RhythmShell> {
 
   void _createTask(BuildContext context) {
     HapticFeedback.selectionClick();
-    showTaskEditor(context, widget.planner);
+    final date = switch (_page) {
+      0 => _day,
+      1 => _week,
+      _ => null,
+    };
+    showTaskCreation(
+      context,
+      widget.planner,
+      preset: date == null
+          ? null
+          : DateTime(date.year, date.month, date.day, 9),
+    );
   }
 
   @override

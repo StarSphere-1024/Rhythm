@@ -6,38 +6,38 @@ enum EditScope { thisOccurrence, thisAndFuture, entireSeries }
 
 enum ExecutionStatus { completed, skipped }
 
-/// The distinct kinds of self-reported routine check-ins.
+/// The categories retained in archived legacy routine check-ins.
+///
+/// These values are archive metadata, not task types.
 enum RoutineType {
-  /// A check-in for the intended time to go to sleep.
+  /// A historical check-in for the intended time to go to sleep.
   bedtime,
 
-  /// A check-in for the intended time to wake up.
+  /// A historical check-in for the intended time to wake up.
   wakeTime,
 }
 
-/// The user's reusable routine targets and check-in availability.
-class RoutinePreferences {
-  /// The usual bedtime in minutes after midnight, or `null` when unconfigured.
+/// The sleep interval used only to fold time in week views.
+///
+/// These settings do not create tasks, reminders, or execution records.
+class SleepDisplayPreferences {
+  /// The folding interval's bedtime boundary in minutes after midnight.
+  ///
+  /// A `null` value leaves this boundary unconfigured.
   final int? bedtimeMinutes;
 
-  /// The usual wake time in minutes after midnight, or `null` when unconfigured.
+  /// The folding interval's wake boundary in minutes after midnight.
+  ///
+  /// A `null` value leaves this boundary unconfigured.
   final int? wakeTimeMinutes;
 
   /// Whether the configured sleep interval is folded in week views.
   final bool foldSleep;
 
-  /// Whether users can create or correct bedtime check-ins.
-  final bool bedtimeCheckInEnabled;
-
-  /// Whether users can create or correct wake-time check-ins.
-  final bool wakeTimeCheckInEnabled;
-
-  RoutinePreferences({
+  SleepDisplayPreferences({
     this.bedtimeMinutes,
     this.wakeTimeMinutes,
     this.foldSleep = false,
-    this.bedtimeCheckInEnabled = true,
-    this.wakeTimeCheckInEnabled = true,
   }) {
     if ((bedtimeMinutes != null &&
             (bedtimeMinutes! < 0 || bedtimeMinutes! >= 1440)) ||
@@ -47,7 +47,7 @@ class RoutinePreferences {
             (bedtimeMinutes == null ||
                 wakeTimeMinutes == null ||
                 bedtimeMinutes == wakeTimeMinutes))) {
-      throw ArgumentError('Invalid routine preferences');
+      throw ArgumentError('Invalid sleep display preferences');
     }
   }
 
@@ -55,19 +55,11 @@ class RoutinePreferences {
     'bedtimeMinutes': bedtimeMinutes,
     'wakeTimeMinutes': wakeTimeMinutes,
     'foldSleep': foldSleep,
-    'bedtimeCheckInEnabled': bedtimeCheckInEnabled,
-    'wakeTimeCheckInEnabled': wakeTimeCheckInEnabled,
   };
 
-  factory RoutinePreferences.fromJson(Object? value) {
+  factory SleepDisplayPreferences.fromJson(Object? value) {
     final map = jsonObject(value);
-    jsonRequireFields(map, [
-      'bedtimeMinutes',
-      'wakeTimeMinutes',
-      'foldSleep',
-      'bedtimeCheckInEnabled',
-      'wakeTimeCheckInEnabled',
-    ]);
+    jsonRequireFields(map, ['bedtimeMinutes', 'wakeTimeMinutes', 'foldSleep']);
     int? minutes(String key) =>
         map[key] == null ? null : jsonInt(map, key, max: 1439);
     final bedtime = minutes('bedtimeMinutes');
@@ -77,22 +69,23 @@ class RoutinePreferences {
         (bedtime == null || wakeTime == null || bedtime == wakeTime)) {
       throw const FormatException('无效作息折叠设置');
     }
-    return RoutinePreferences(
+    return SleepDisplayPreferences(
       bedtimeMinutes: bedtime,
       wakeTimeMinutes: wakeTime,
       foldSleep: foldSleep,
-      bedtimeCheckInEnabled: jsonBool(map, 'bedtimeCheckInEnabled'),
-      wakeTimeCheckInEnabled: jsonBool(map, 'wakeTimeCheckInEnabled'),
     );
   }
 }
 
-/// An immutable snapshot of one self-reported routine check-in.
+/// An immutable archived snapshot of a legacy routine check-in.
+///
+/// Existing snapshots survive migration and backup restoration without being
+/// converted into task completions or included in task statistics.
 class RoutineRecord {
-  /// The stable identifier of this check-in.
+  /// The stable identifier retained from the historical check-in.
   final String id;
 
-  /// The bedtime or wake-time category of this check-in.
+  /// The historical bedtime or wake-time category.
   final RoutineType type;
 
   /// The target civil date, stored as a UTC-midnight date carrier.

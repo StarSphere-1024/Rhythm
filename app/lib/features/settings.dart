@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../core/backup_files.dart';
 import '../core/models.dart';
 import '../core/planner.dart';
-import '../core/recurrence.dart';
 import '../core/reminders.dart';
 import 'common.dart';
 
@@ -62,12 +60,13 @@ class _SettingsPageState extends State<SettingsPage> {
     if (zone != null) await widget.planner.setTimezone(zone);
   }
 
-  Future<void> _saveRoutinePreferences(RoutinePreferences preferences) =>
-      _action(() => widget.planner.saveRoutinePreferences(preferences));
+  Future<void> _saveSleepDisplayPreferences(
+    SleepDisplayPreferences preferences,
+  ) => _action(() => widget.planner.saveSleepDisplayPreferences(preferences));
 
-  Future<void> _pickRoutineTarget(RoutineType type) async {
-    final preferences = widget.planner.routinePreferences;
-    final isBedtime = type == RoutineType.bedtime;
+  Future<void> _pickSleepBoundary({required bool bedtime}) async {
+    final preferences = widget.planner.sleepDisplayPreferences;
+    final isBedtime = bedtime;
     final current = isBedtime
         ? preferences.bedtimeMinutes
         : preferences.wakeTimeMinutes;
@@ -82,38 +81,32 @@ class _SettingsPageState extends State<SettingsPage> {
     final minutes = picked.hour * 60 + picked.minute;
     final bedtimeMinutes = isBedtime ? minutes : preferences.bedtimeMinutes;
     final wakeTimeMinutes = isBedtime ? preferences.wakeTimeMinutes : minutes;
-    final equalTargets =
+    final equalBoundaries =
         bedtimeMinutes != null && bedtimeMinutes == wakeTimeMinutes;
-    await _saveRoutinePreferences(
-      RoutinePreferences(
+    await _saveSleepDisplayPreferences(
+      SleepDisplayPreferences(
         bedtimeMinutes: bedtimeMinutes,
         wakeTimeMinutes: wakeTimeMinutes,
         foldSleep:
             preferences.foldSleep &&
             bedtimeMinutes != null &&
             wakeTimeMinutes != null &&
-            !equalTargets,
-        bedtimeCheckInEnabled: preferences.bedtimeCheckInEnabled,
-        wakeTimeCheckInEnabled: preferences.wakeTimeCheckInEnabled,
+            !equalBoundaries,
       ),
     );
-    if (equalTargets && mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('入睡与起床目标相同，请更正；不会按全天睡眠处理。')));
+    if (equalBoundaries && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('睡眠显示边界相同，请重新设置；不会按全天睡眠处理。')),
+      );
     }
   }
 
-  Future<void> _clearRoutineTarget(RoutineType type) {
-    final preferences = widget.planner.routinePreferences;
-    final bedtimeMinutes = type == RoutineType.bedtime
-        ? null
-        : preferences.bedtimeMinutes;
-    final wakeTimeMinutes = type == RoutineType.wakeTime
-        ? null
-        : preferences.wakeTimeMinutes;
-    return _saveRoutinePreferences(
-      RoutinePreferences(
+  Future<void> _clearSleepBoundary({required bool bedtime}) {
+    final preferences = widget.planner.sleepDisplayPreferences;
+    final bedtimeMinutes = bedtime ? null : preferences.bedtimeMinutes;
+    final wakeTimeMinutes = bedtime ? preferences.wakeTimeMinutes : null;
+    return _saveSleepDisplayPreferences(
+      SleepDisplayPreferences(
         bedtimeMinutes: bedtimeMinutes,
         wakeTimeMinutes: wakeTimeMinutes,
         foldSleep:
@@ -121,101 +114,9 @@ class _SettingsPageState extends State<SettingsPage> {
             bedtimeMinutes != null &&
             wakeTimeMinutes != null &&
             bedtimeMinutes != wakeTimeMinutes,
-        bedtimeCheckInEnabled: preferences.bedtimeCheckInEnabled,
-        wakeTimeCheckInEnabled: preferences.wakeTimeCheckInEnabled,
       ),
     );
   }
-
-  DateTime _nearestTargetDate(RoutineType type, String deviceTimezone) {
-    final preferences = widget.planner.routinePreferences;
-    final minutes = type == RoutineType.bedtime
-        ? preferences.bedtimeMinutes
-        : preferences.wakeTimeMinutes;
-    if (minutes == null) return DateTime.now();
-    final now = DateTime.now().toUtc();
-    final localNow = tz.TZDateTime.from(
-      now,
-      Recurrence.location(deviceTimezone),
-    );
-    var closest = DateTime(localNow.year, localNow.month, localNow.day);
-    var closestDistance = const Duration(days: 1000);
-    for (var offset = -1; offset <= 1; offset++) {
-      final day = DateTime(
-        localNow.year,
-        localNow.month,
-        localNow.day + offset,
-      );
-      final target = Recurrence.resolve(
-        DateTime(day.year, day.month, day.day, minutes ~/ 60, minutes % 60),
-        deviceTimezone,
-      );
-      final distance = target.difference(now).abs();
-      if (distance < closestDistance) {
-        closest = day;
-        closestDistance = distance;
-      }
-    }
-    return closest;
-  }
-
-  Future<void> _recordRoutine(
-    RoutineType type, {
-    RoutineRecord? existing,
-  }) async {
-    final preferences = widget.planner.routinePreferences;
-    final minutes = type == RoutineType.bedtime
-        ? preferences.bedtimeMinutes
-        : preferences.wakeTimeMinutes;
-    if (minutes == null || _busy) return;
-
-    late final String deviceTimezone;
-    try {
-      deviceTimezone = (await FlutterTimezone.getLocalTimezone()).identifier;
-      Recurrence.location(deviceTimezone);
-    } catch (error) {
-      if (mounted) {
-        showError(context, error, action: '读取设备时区');
-      }
-      return;
-    }
-    if (!mounted) return;
-
-    final initialTargetDate = existing == null
-        ? _nearestTargetDate(type, deviceTimezone)
-        : DateTime(
-            existing.targetDate.year,
-            existing.targetDate.month,
-            existing.targetDate.day,
-          );
-    final pickedTargetDate = await showDatePicker(
-      context: context,
-      initialDate: initialTargetDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100, 12, 31),
-    );
-    if (pickedTargetDate == null || !mounted) return;
-    final pickedRecordTime = await pickDateAndTime(
-      context,
-      existing?.recordedAt.toLocal() ?? DateTime.now(),
-    );
-    if (pickedRecordTime == null || !mounted) return;
-    await _action(
-      () => widget.planner.recordRoutine(
-        type: type,
-        targetDate: DateTime.utc(
-          pickedTargetDate.year,
-          pickedTargetDate.month,
-          pickedTargetDate.day,
-        ),
-        recordedAt: pickedRecordTime.toUtc(),
-        timezone: deviceTimezone,
-      ),
-    );
-  }
-
-  Future<void> _undoRoutine(RoutineRecord record) =>
-      _action(() => widget.planner.undoRoutine(record));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -223,18 +124,20 @@ class _SettingsPageState extends State<SettingsPage> {
     body: AnimatedBuilder(
       animation: Listenable.merge([widget.planner, widget.reminders]),
       builder: (context, _) {
-        final preferences = widget.planner.routinePreferences;
-        final records = widget.planner.routineRecords.toList()
+        final preferences = widget.planner.sleepDisplayPreferences;
+        final records = widget.planner.archivedRoutineRecords.toList()
           ..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text('作息', style: Theme.of(context).textTheme.titleLarge),
+            Text('睡眠显示', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            const Text('常用目标用于周日程显示与作息记录对照；不创建普通任务，也不计入任务统计。'),
+            const Text(
+              '入睡、起床现在都是普通重复任务，请手动创建并使用任务的提醒、完成、跳过与撤销。这里的边界只用于折叠周日程显示，不会创建任务或记录。',
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('常用入睡目标'),
+              title: const Text('睡眠折叠起始边界'),
               subtitle: Text(
                 preferences.bedtimeMinutes == null
                     ? '未设置'
@@ -243,18 +146,18 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: Wrap(
                 children: [
                   IconButton(
-                    tooltip: '设置入睡目标',
+                    tooltip: '设置睡眠折叠起始边界',
                     onPressed: _busy
                         ? null
-                        : () => _pickRoutineTarget(RoutineType.bedtime),
+                        : () => _pickSleepBoundary(bedtime: true),
                     icon: const Icon(Icons.edit_outlined),
                   ),
                   if (preferences.bedtimeMinutes != null)
                     IconButton(
-                      tooltip: '清除入睡目标',
+                      tooltip: '清除睡眠折叠起始边界',
                       onPressed: _busy
                           ? null
-                          : () => _clearRoutineTarget(RoutineType.bedtime),
+                          : () => _clearSleepBoundary(bedtime: true),
                       icon: const Icon(Icons.close),
                     ),
                 ],
@@ -262,7 +165,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('常用起床目标'),
+              title: const Text('睡眠折叠结束边界'),
               subtitle: Text(
                 preferences.wakeTimeMinutes == null
                     ? '未设置'
@@ -271,18 +174,18 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: Wrap(
                 children: [
                   IconButton(
-                    tooltip: '设置起床目标',
+                    tooltip: '设置睡眠折叠结束边界',
                     onPressed: _busy
                         ? null
-                        : () => _pickRoutineTarget(RoutineType.wakeTime),
+                        : () => _pickSleepBoundary(bedtime: false),
                     icon: const Icon(Icons.edit_outlined),
                   ),
                   if (preferences.wakeTimeMinutes != null)
                     IconButton(
-                      tooltip: '清除起床目标',
+                      tooltip: '清除睡眠折叠结束边界',
                       onPressed: _busy
                           ? null
-                          : () => _clearRoutineTarget(RoutineType.wakeTime),
+                          : () => _clearSleepBoundary(bedtime: false),
                       icon: const Icon(Icons.close),
                     ),
                 ],
@@ -296,8 +199,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         preferences.wakeTimeMinutes == null ||
                         preferences.bedtimeMinutes ==
                             preferences.wakeTimeMinutes
-                    ? '设置不同的入睡与起床目标后可用'
-                    : '仅改变显示，不影响任务或作息打卡',
+                    ? '设置不同的起始与结束显示边界后可用'
+                    : '仅改变周日程显示，不影响任务或历史归档',
               ),
               value: preferences.foldSleep,
               onChanged:
@@ -306,131 +209,40 @@ class _SettingsPageState extends State<SettingsPage> {
                       preferences.wakeTimeMinutes == null ||
                       preferences.bedtimeMinutes == preferences.wakeTimeMinutes
                   ? null
-                  : (value) => _saveRoutinePreferences(
-                      RoutinePreferences(
+                  : (value) => _saveSleepDisplayPreferences(
+                      SleepDisplayPreferences(
                         bedtimeMinutes: preferences.bedtimeMinutes,
                         wakeTimeMinutes: preferences.wakeTimeMinutes,
                         foldSleep: value,
-                        bedtimeCheckInEnabled:
-                            preferences.bedtimeCheckInEnabled,
-                        wakeTimeCheckInEnabled:
-                            preferences.wakeTimeCheckInEnabled,
                       ),
                     ),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('启用入睡打卡'),
-              subtitle: const Text('关闭入口不删除已有入睡记录'),
-              value: preferences.bedtimeCheckInEnabled,
-              onChanged: _busy
-                  ? null
-                  : (value) => _saveRoutinePreferences(
-                      RoutinePreferences(
-                        bedtimeMinutes: preferences.bedtimeMinutes,
-                        wakeTimeMinutes: preferences.wakeTimeMinutes,
-                        foldSleep: preferences.foldSleep,
-                        bedtimeCheckInEnabled: value,
-                        wakeTimeCheckInEnabled:
-                            preferences.wakeTimeCheckInEnabled,
-                      ),
-                    ),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('启用起床打卡'),
-              subtitle: const Text('关闭入口不删除已有起床记录'),
-              value: preferences.wakeTimeCheckInEnabled,
-              onChanged: _busy
-                  ? null
-                  : (value) => _saveRoutinePreferences(
-                      RoutinePreferences(
-                        bedtimeMinutes: preferences.bedtimeMinutes,
-                        wakeTimeMinutes: preferences.wakeTimeMinutes,
-                        foldSleep: preferences.foldSleep,
-                        bedtimeCheckInEnabled:
-                            preferences.bedtimeCheckInEnabled,
-                        wakeTimeCheckInEnabled: value,
-                      ),
-                    ),
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.tonalIcon(
-                  onPressed:
-                      _busy ||
-                          !preferences.bedtimeCheckInEnabled ||
-                          preferences.bedtimeMinutes == null
-                      ? null
-                      : () => _recordRoutine(RoutineType.bedtime),
-                  icon: const Icon(Icons.bedtime_outlined),
-                  label: const Text('入睡打卡'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed:
-                      _busy ||
-                          !preferences.wakeTimeCheckInEnabled ||
-                          preferences.wakeTimeMinutes == null
-                      ? null
-                      : () => _recordRoutine(RoutineType.wakeTime),
-                  icon: const Icon(Icons.wb_sunny_outlined),
-                  label: const Text('起床打卡'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '作息记录 · ${records.length} 条',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            if (records.isEmpty)
-              const ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('尚无作息记录'),
-                subtitle: Text('记录按作息类型和目标日期分别保存。'),
+            if (records.isNotEmpty) ...[
+              const SizedBox(height: 24),
+              Text(
+                '历史作息归档 · ${records.length} 条 · 只读',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            for (final record in records)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    record.type == RoutineType.bedtime
-                        ? Icons.bedtime_outlined
-                        : Icons.wb_sunny_outlined,
-                  ),
-                  title: Text(
-                    '${record.type == RoutineType.bedtime ? '入睡' : '起床'} · ${dateLabel(record.targetDate)}',
-                  ),
-                  subtitle: Text(
-                    '记录 ${dateLabel(record.recordedAt.toLocal())} ${timeLabel(record.recordedAt.toLocal())} · '
-                    '目标 ${(record.targetMinutes ~/ 60).toString().padLeft(2, '0')}:${(record.targetMinutes % 60).toString().padLeft(2, '0')} · ${record.timezone}',
-                  ),
-                  trailing: Wrap(
-                    children: [
-                      IconButton(
-                        tooltip: '更正这次作息记录',
-                        onPressed:
-                            _busy ||
-                                (record.type == RoutineType.bedtime
-                                    ? !preferences.bedtimeCheckInEnabled ||
-                                          preferences.bedtimeMinutes == null
-                                    : !preferences.wakeTimeCheckInEnabled ||
-                                          preferences.wakeTimeMinutes == null)
-                            ? null
-                            : () =>
-                                  _recordRoutine(record.type, existing: record),
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                      IconButton(
-                        tooltip: '撤销这次作息记录',
-                        onPressed: _busy ? null : () => _undoRoutine(record),
-                        icon: const Icon(Icons.undo),
-                      ),
-                    ],
+              const SizedBox(height: 8),
+              const Text('旧版作息记录按原快照保留，仅供查看；不能新增、更正或撤销，不会转换为任务完成记录，也不计入任务统计。'),
+              for (final record in records)
+                Card(
+                  child: ListTile(
+                    leading: Icon(
+                      record.type == RoutineType.bedtime
+                          ? Icons.bedtime_outlined
+                          : Icons.wb_sunny_outlined,
+                    ),
+                    title: Text(
+                      '${record.type == RoutineType.bedtime ? '入睡' : '起床'} · ${dateLabel(record.targetDate)}',
+                    ),
+                    subtitle: Text(
+                      '原目标 ${(record.targetMinutes ~/ 60).toString().padLeft(2, '0')}:${(record.targetMinutes % 60).toString().padLeft(2, '0')} · 时区 ${record.timezone}\n'
+                      '记录时间 ${record.recordedAt.toUtc().toIso8601String()}（UTC）',
+                    ),
                   ),
                 ),
-              ),
+            ],
             const SizedBox(height: 24),
             Text('本地提醒', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
@@ -454,7 +266,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Text('数据备份', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
             const Text(
-              '数据只保存在本机。JSON 备份包含任务、分类、规则、单次变更、作息偏好与记录、执行历史。恢复仅支持完整替换，不合并。',
+              '数据只保存在本机。JSON 备份包含任务、分类、规则、单次变更、睡眠显示偏好、只读历史作息归档与执行历史。恢复仅支持完整替换，不合并。',
             ),
             const SizedBox(height: 12),
             FilledButton.tonalIcon(

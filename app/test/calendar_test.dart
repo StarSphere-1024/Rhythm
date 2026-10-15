@@ -73,8 +73,8 @@ void main() {
     (tester) async {
       final planner = Planner.memory(timezone: 'UTC');
       addTearDown(planner.dispose);
-      await planner.saveRoutinePreferences(
-        RoutinePreferences(
+      await planner.saveSleepDisplayPreferences(
+        SleepDisplayPreferences(
           bedtimeMinutes: 23 * 60,
           wakeTimeMinutes: 7 * 60,
           foldSleep: true,
@@ -100,8 +100,9 @@ void main() {
 
       await tester.tap(find.text('完整24小时'));
       await tester.pumpAndSettle();
-      expect(planner.routinePreferences.foldSleep, isTrue);
+      expect(planner.sleepDisplayPreferences.foldSleep, isTrue);
       expect(planner.tasks, hasLength(2));
+      expect(planner.archivedRoutineRecords, isEmpty);
     },
   );
 
@@ -216,8 +217,8 @@ void main() {
   ) async {
     final planner = Planner.memory(timezone: 'UTC');
     addTearDown(planner.dispose);
-    await planner.saveRoutinePreferences(
-      RoutinePreferences(
+    await planner.saveSleepDisplayPreferences(
+      SleepDisplayPreferences(
         bedtimeMinutes: 2 * 60,
         wakeTimeMinutes: 10 * 60,
         foldSleep: true,
@@ -234,7 +235,9 @@ void main() {
     expect(find.text('02:00–10:00'), findsNothing);
     expect(find.text('04:00'), findsOneWidget);
     expect(find.text('08:00'), findsOneWidget);
-    expect(planner.routinePreferences.foldSleep, isTrue);
+    expect(planner.sleepDisplayPreferences.foldSleep, isTrue);
+    expect(planner.tasks, isEmpty);
+    expect(planner.archivedRoutineRecords, isEmpty);
   });
 
   testWidgets('overlapping current tasks share one scroll anchor', (

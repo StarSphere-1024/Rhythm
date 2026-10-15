@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
-import '../core/recurrence.dart';
 import '../core/planner.dart';
 import 'common.dart';
 import 'editor.dart';
@@ -120,6 +119,7 @@ class _InboxViewState extends State<InboxView> {
                                 context,
                                 widget.planner,
                                 task: task,
+                                schedule: true,
                               ),
                             ),
                             IconButton(
@@ -168,7 +168,6 @@ class ReviewView extends StatefulWidget {
 
 class _ReviewViewState extends State<ReviewView> {
   String? _category;
-  final Set<String> _routineBusy = {};
 
   Future<void> _history(
     BuildContext context,
@@ -241,13 +240,6 @@ class _ReviewViewState extends State<ReviewView> {
     ),
   );
 
-  Future<void> _undoRoutine(RoutineRecord record) async {
-    if (!_routineBusy.add(record.id)) return;
-    setState(() {});
-    await perform(context, () => widget.planner.undoRoutine(record));
-    if (mounted) setState(() => _routineBusy.remove(record.id));
-  }
-
   @override
   Widget build(BuildContext context) {
     final summary = widget.planner.summary(weekStart(widget.date));
@@ -263,16 +255,6 @@ class _ReviewViewState extends State<ReviewView> {
       ...summary.categoryCounts.keys,
       ...summary.history.map((record) => record.task.category),
     }.toList()..sort();
-    final reviewWeek = weekStart(widget.date);
-    final routineRecords = widget.planner.routineRecords.where((record) {
-      final targetDay = DateTime(
-        record.targetDate.year,
-        record.targetDate.month,
-        record.targetDate.day,
-      );
-      return !targetDay.isBefore(reviewWeek) &&
-          targetDay.isBefore(nextDay(reviewWeek, 7));
-    }).toList()..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
     return Column(
       children: [
         DateNavigation(
@@ -341,69 +323,6 @@ class _ReviewViewState extends State<ReviewView> {
               const Text(
                 '计划完成率 = 已完成计划 ÷ 全部计划。跳过计入分母；单次跨周改期仍归原计划周。计划周按规则原时区归属；实际完成按打卡时间计入设备本地周，包含收集箱直接完成。每周均从周一开始。',
               ),
-              const SizedBox(height: 24),
-              Text(
-                '作息记录 · ${routineRecords.length} 条',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              if (routineRecords.isEmpty)
-                const Text('本周尚无入睡或起床记录。作息记录与任务统计分开。'),
-              for (final record in routineRecords)
-                Card(
-                  child: ListTile(
-                    leading: Icon(
-                      record.type == RoutineType.bedtime
-                          ? Icons.bedtime_outlined
-                          : Icons.wb_sunny_outlined,
-                    ),
-                    title: Text(
-                      record.type == RoutineType.bedtime ? '入睡打卡' : '起床打卡',
-                    ),
-                    subtitle: Builder(
-                      builder: (context) {
-                        final target = DateTime(
-                          record.targetDate.year,
-                          record.targetDate.month,
-                          record.targetDate.day,
-                          record.targetMinutes ~/ 60,
-                          record.targetMinutes % 60,
-                        );
-                        final targetInstant = Recurrence.resolve(
-                          target,
-                          record.timezone,
-                        );
-                        final difference = record.recordedAt
-                            .difference(targetInstant)
-                            .inMinutes;
-                        final comparison = difference == 0
-                            ? '正好目标时间'
-                            : difference < 0
-                            ? '提前 ${-difference} 分钟'
-                            : '晚于目标 $difference 分钟';
-                        final recorded = record.recordedAt.toLocal();
-                        return Text(
-                          '目标 ${dateLabel(record.targetDate)} ${timeLabel(target)} · '
-                          '记录 ${dateLabel(recorded)} ${timeLabel(recorded)} · '
-                          '$comparison · ${record.timezone}',
-                        );
-                      },
-                    ),
-                    trailing: IconButton(
-                      tooltip: '撤销这次作息记录',
-                      onPressed: _routineBusy.contains(record.id)
-                          ? null
-                          : () => _undoRoutine(record),
-                      icon: _routineBusy.contains(record.id)
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.undo),
-                    ),
-                  ),
-                ),
               const SizedBox(height: 24),
               Text(
                 '分类 · 实际完成次数',

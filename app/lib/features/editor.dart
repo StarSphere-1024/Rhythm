@@ -6,12 +6,51 @@ import '../core/planner.dart';
 import '../core/recurrence.dart';
 import 'common.dart';
 
+Future<void> showTaskCreation(
+  BuildContext context,
+  Planner planner, {
+  DateTime? preset,
+}) async {
+  final schedule = await showModalBottomSheet<bool>(
+    context: context,
+    useSafeArea: true,
+    builder: (sheetContext) => SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.inbox_outlined),
+            title: const Text('收集任务'),
+            subtitle: const Text('先记下来，不必决定时间'),
+            onTap: () => Navigator.pop(sheetContext, false),
+          ),
+          ListTile(
+            leading: const Icon(Icons.event_outlined),
+            title: const Text('安排日程'),
+            subtitle: const Text('选择时间，放进今日与周日程'),
+            onTap: () => Navigator.pop(sheetContext, true),
+          ),
+        ],
+      ),
+    ),
+  );
+  if (schedule == null || !context.mounted) return;
+  await showTaskEditor(
+    context,
+    planner,
+    schedule: schedule,
+    preset: schedule ? preset : null,
+  );
+}
+
 Future<void> showTaskEditor(
   BuildContext context,
   Planner planner, {
   Task? task,
   Occurrence? occurrence,
   DateTime? preset,
+  bool schedule = false,
   EditScope scope = EditScope.entireSeries,
 }) => showModalBottomSheet<void>(
   context: context,
@@ -22,6 +61,7 @@ Future<void> showTaskEditor(
     task: task,
     occurrence: occurrence,
     preset: preset,
+    schedule: schedule,
     scope: scope,
   ),
 );
@@ -33,12 +73,14 @@ class TaskEditor extends StatefulWidget {
     this.task,
     this.occurrence,
     this.preset,
+    this.schedule = false,
     required this.scope,
   });
   final Planner planner;
   final Task? task;
   final Occurrence? occurrence;
   final DateTime? preset;
+  final bool schedule;
   final EditScope scope;
   @override
   State<TaskEditor> createState() => _TaskEditorState();
@@ -51,6 +93,7 @@ class _TaskEditorState extends State<TaskEditor> {
   late final TextEditingController _notes;
   late final TextEditingController _duration;
   late DateTime _start;
+  late final DateTime _initialStart;
   late int _minutes;
   late bool _scheduled;
   late int _color;
@@ -80,10 +123,10 @@ class _TaskEditorState extends State<TaskEditor> {
         _minutes != _initialDraft.durationMinutes) {
       return true;
     }
-    final wasScheduled = _initialDraft.start != null;
+    final wasScheduled = _initialDraft.start != null || widget.schedule;
     if (_scheduled != wasScheduled) return true;
     if (!_scheduled) return false;
-    return _start != _initialDraft.start ||
+    return _start != (_initialDraft.start ?? _initialStart) ||
         _repeat != _initialDraft.repeat ||
         _weekdays.length != _initialDraft.weekdays.length ||
         !_weekdays.containsAll(_initialDraft.weekdays) ||
@@ -131,9 +174,12 @@ class _TaskEditorState extends State<TaskEditor> {
     final draft = widget.task == null
         ? TaskDraft(
             title: '',
-            start: widget.preset == null
+            start: widget.preset == null && !widget.schedule
                 ? null
-                : _wallInZone(widget.preset!, widget.planner.timezone),
+                : _wallInZone(
+                    widget.preset ?? DateTime.now(),
+                    widget.planner.timezone,
+                  ),
             timezone: widget.planner.timezone,
           )
         : widget.planner.draftFor(
@@ -147,8 +193,11 @@ class _TaskEditorState extends State<TaskEditor> {
     _notes = TextEditingController(text: draft.notes);
     _minutes = draft.durationMinutes;
     _duration = TextEditingController(text: '$_minutes');
-    _scheduled = draft.start != null;
-    _start = draft.start ?? _wallInZone(DateTime.now(), draft.timezone);
+    _scheduled = draft.start != null || widget.schedule;
+    _start =
+        draft.start ??
+        _wallInZone(widget.preset ?? DateTime.now(), draft.timezone);
+    _initialStart = _start;
     _color = draft.color;
     _repeat = draft.repeat;
     _weekdays = {...draft.weekdays};
@@ -289,7 +338,11 @@ class _TaskEditorState extends State<TaskEditor> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      widget.task == null ? '新的节律' : '编辑任务',
+                      widget.task == null
+                          ? (_scheduled ? '安排日程' : '收集任务')
+                          : (widget.schedule && widget.occurrence == null
+                                ? '安排任务'
+                                : '编辑任务'),
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     if (widget.occurrence != null)
@@ -301,9 +354,9 @@ class _TaskEditorState extends State<TaskEditor> {
                     TextFormField(
                       controller: _title,
                       autofocus: widget.task == null,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: '任务名称',
-                        hintText: '只填名称即可保存到收集箱',
+                        hintText: _scheduled ? '这段时间想做什么？' : '只填名称即可保存到收集箱',
                       ),
                       maxLength: 120,
                       onChanged: (_) => _markDirty(),
@@ -316,7 +369,7 @@ class _TaskEditorState extends State<TaskEditor> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('安排时间'),
-                      subtitle: Text(_scheduled ? '已安排到日历' : '仅填写名称即可保存到收集箱'),
+                      subtitle: Text(_scheduled ? '保存后安排到日历' : '仅填写名称即可保存到收集箱'),
                       value: _scheduled,
                       onChanged: (value) => setState(() {
                         _scheduled = value;

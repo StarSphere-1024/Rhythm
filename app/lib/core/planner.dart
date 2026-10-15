@@ -17,8 +17,8 @@ class _Snapshot {
   final Map<String, ScheduleRule> rules;
   final Map<String, OccurrenceOverride> overrides;
   final Map<String, ExecutionRecord> records;
-  RoutinePreferences routinePreferences;
-  final Map<String, RoutineRecord> routineRecords;
+  SleepDisplayPreferences sleepDisplayPreferences;
+  Map<String, RoutineRecord> archivedRoutineRecords;
   _Snapshot({
     required this.timezone,
     this.timezoneDetectionFallback = false,
@@ -27,15 +27,16 @@ class _Snapshot {
     Map<String, ScheduleRule>? rules,
     Map<String, OccurrenceOverride>? overrides,
     Map<String, ExecutionRecord>? records,
-    RoutinePreferences? routinePreferences,
-    Map<String, RoutineRecord>? routineRecords,
+    SleepDisplayPreferences? sleepDisplayPreferences,
+    Map<String, RoutineRecord>? archivedRoutineRecords,
   }) : categories = categories ?? ['健身', '学习', '社交', '生活', '其他'],
        tasks = tasks ?? {},
        rules = rules ?? {},
        overrides = overrides ?? {},
        records = records ?? {},
-       routinePreferences = routinePreferences ?? RoutinePreferences(),
-       routineRecords = routineRecords ?? {};
+       sleepDisplayPreferences =
+           sleepDisplayPreferences ?? SleepDisplayPreferences(),
+       archivedRoutineRecords = archivedRoutineRecords ?? const {};
   _Snapshot copy() => _Snapshot(
     timezone: timezone,
     timezoneDetectionFallback: timezoneDetectionFallback,
@@ -44,11 +45,11 @@ class _Snapshot {
     rules: Map.of(rules),
     overrides: Map.of(overrides),
     records: Map.of(records),
-    routinePreferences: routinePreferences,
-    routineRecords: Map.of(routineRecords),
+    sleepDisplayPreferences: sleepDisplayPreferences,
+    archivedRoutineRecords: archivedRoutineRecords,
   );
   Map<String, dynamic> toJson() => {
-    'schemaVersion': 2,
+    'schemaVersion': 3,
     'settings': {
       'timezone': timezone,
       'timezoneDetectionFallback': timezoneDetectionFallback,
@@ -58,13 +59,15 @@ class _Snapshot {
     'rules': rules.values.map((r) => r.toJson()).toList(),
     'overrides': overrides.values.map((o) => o.toJson()).toList(),
     'records': records.values.map((r) => r.toJson()).toList(),
-    'routinePreferences': routinePreferences.toJson(),
-    'routineRecords': routineRecords.values.map((r) => r.toJson()).toList(),
+    'sleepDisplayPreferences': sleepDisplayPreferences.toJson(),
+    'archivedRoutineRecords': archivedRoutineRecords.values
+        .map((r) => r.toJson())
+        .toList(),
   };
   factory _Snapshot.decode(String source) {
     final root = jsonObject(jsonDecode(source));
     final schemaVersion = jsonInt(root, 'schemaVersion');
-    if (schemaVersion != 1 && schemaVersion != 2) {
+    if (schemaVersion != 1 && schemaVersion != 2 && schemaVersion != 3) {
       throw const FormatException('不支持的备份版本');
     }
     final settings = jsonObject(root['settings']);
@@ -108,17 +111,27 @@ class _Snapshot {
         (o) => o.id,
       ),
       records: decodeList('records', ExecutionRecord.fromJson, (r) => r.id),
-      routinePreferences: schemaVersion == 1
-          ? RoutinePreferences()
-          : RoutinePreferences.fromJson(root['routinePreferences']),
-      routineRecords: schemaVersion == 1
-          ? <String, RoutineRecord>{}
-          : decodeList('routineRecords', RoutineRecord.fromJson, (r) => r.id),
+      sleepDisplayPreferences: switch (schemaVersion) {
+        1 => SleepDisplayPreferences(),
+        2 => _legacySleepDisplayPreferences(root['routinePreferences']),
+        _ => SleepDisplayPreferences.fromJson(root['sleepDisplayPreferences']),
+      },
+      archivedRoutineRecords: schemaVersion == 1
+          ? const {}
+          : Map<String, RoutineRecord>.unmodifiable(
+              decodeList(
+                schemaVersion == 2
+                    ? 'routineRecords'
+                    : 'archivedRoutineRecords',
+                RoutineRecord.fromJson,
+                (r) => r.id,
+              ),
+            ),
     );
-    final routineKeys = <String>{};
-    for (final record in result.routineRecords.values) {
+    final archiveKeys = <String>{};
+    for (final record in result.archivedRoutineRecords.values) {
       _validZone(record.timezone);
-      if (!routineKeys.add(
+      if (!archiveKeys.add(
         '${record.type.name}:${record.targetDate.toIso8601String()}',
       )) {
         throw const FormatException('同类作息记录目标日期重复');
@@ -267,6 +280,14 @@ class _Snapshot {
     }
     return result;
   }
+  static SleepDisplayPreferences _legacySleepDisplayPreferences(Object? value) {
+    final map = jsonObject(value);
+    jsonRequireFields(map, ['bedtimeCheckInEnabled', 'wakeTimeCheckInEnabled']);
+    jsonBool(map, 'bedtimeCheckInEnabled');
+    jsonBool(map, 'wakeTimeCheckInEnabled');
+    return SleepDisplayPreferences.fromJson(map);
+  }
+
   static void _validZone(String zone) {
     try {
       Recurrence.location(zone);
@@ -276,11 +297,13 @@ class _Snapshot {
   }
 }
 
-/// Small offline datasets use ONE versioned JSON document in transactional
-/// SQLite on Android (FULL synchronous); Web uses browser-local preferences.
-/// Mutations are serialized, persisted before publication, and never acknowledge
-/// a failed write. No cascade deletion, generated-instance table, or device-zone
-/// dependence is involved. Callers must await mutations and display errors.
+/// The personal offline planner backed by one versioned durable document.
+///
+/// Mutations are serialized and persisted before publication, so failed writes
+/// never publish state. Sleep and wake plans use ordinary tasks; legacy routine
+/// check-ins are retained only as a read-only archive outside task statistics.
+/// Android uses transactional SQLite and Web uses browser-local preferences.
+/// Callers must await mutations and display storage errors.
 class Planner extends ChangeNotifier {
   static const _uuid = Uuid();
   _Snapshot _state;
@@ -335,12 +358,15 @@ class Planner extends ChangeNotifier {
   List<ScheduleRule> get rules => List.unmodifiable(_state.rules.values);
   List<ExecutionRecord> get records => List.unmodifiable(_state.records.values);
 
-  /// The saved routine targets, fold preference, and independent check-in states.
-  RoutinePreferences get routinePreferences => _state.routinePreferences;
+  /// The saved sleep-folding boundaries and display preference.
+  SleepDisplayPreferences get sleepDisplayPreferences =>
+      _state.sleepDisplayPreferences;
 
-  /// The immutable routine check-in snapshots held by the planner.
-  List<RoutineRecord> get routineRecords =>
-      List.unmodifiable(_state.routineRecords.values);
+  /// The immutable legacy check-ins excluded from ordinary task statistics.
+  ///
+  /// Restoring a backup replaces this archive with that backup's records.
+  List<RoutineRecord> get archivedRoutineRecords =>
+      List.unmodifiable(_state.archivedRoutineRecords.values);
   List<Task> get inbox => _state.tasks.values
       .where(
         (task) =>
@@ -375,53 +401,13 @@ class Planner extends ChangeNotifier {
     return action;
   }
 
-  /// Persists routine preferences before publishing the updated state.
-  Future<void> saveRoutinePreferences(RoutinePreferences preferences) =>
-      _mutate((state) {
-        state.routinePreferences = preferences;
-      });
-
-  /// Creates or corrects one check-in for a routine type and target date.
+  /// Persists sleep-folding preferences without changing tasks or history.
   ///
-  /// The [timezone] snapshots how the target wall-clock time resolves. The
-  /// [targetDate] must be a UTC-midnight carrier; [recordedAt] may be any
-  /// instant and is normalized to UTC before persistence.
-  Future<void> recordRoutine({
-    required RoutineType type,
-    required DateTime targetDate,
-    required DateTime recordedAt,
-    required String timezone,
-  }) => _mutate((state) {
-    Recurrence.location(timezone);
-    final existing = state.routineRecords.values.where(
-      (record) => record.type == type && record.targetDate == targetDate,
-    );
-    final previous = existing.isEmpty ? null : existing.single;
-    final preferences = state.routinePreferences;
-    final minutes = switch (type) {
-      RoutineType.bedtime => preferences.bedtimeMinutes,
-      RoutineType.wakeTime => preferences.wakeTimeMinutes,
-    };
-    final enabled = switch (type) {
-      RoutineType.bedtime => preferences.bedtimeCheckInEnabled,
-      RoutineType.wakeTime => preferences.wakeTimeCheckInEnabled,
-    };
-    if (!enabled) throw StateError('作息打卡入口已关闭');
-    if (minutes == null) throw StateError('尚未设置作息目标时间');
-    final record = RoutineRecord(
-      id: previous?.id ?? _uuid.v4(),
-      type: type,
-      targetDate: targetDate,
-      targetMinutes: minutes,
-      timezone: timezone,
-      recordedAt: recordedAt.toUtc(),
-    );
-    state.routineRecords[record.id] = record;
-  });
-
-  /// Removes only the supplied [record]'s check-in.
-  Future<void> undoRoutine(RoutineRecord record) => _mutate((state) {
-    state.routineRecords.remove(record.id);
+  /// The update is published only after the durable write succeeds.
+  Future<void> saveSleepDisplayPreferences(
+    SleepDisplayPreferences preferences,
+  ) => _mutate((state) {
+    state.sleepDisplayPreferences = preferences;
   });
 
   Future<void> setTimezone(String zone) => _mutate((state) {
@@ -1027,10 +1013,8 @@ class Planner extends ChangeNotifier {
       state.records
         ..clear()
         ..addAll(restored.records);
-      state.routinePreferences = restored.routinePreferences;
-      state.routineRecords
-        ..clear()
-        ..addAll(restored.routineRecords);
+      state.sleepDisplayPreferences = restored.sleepDisplayPreferences;
+      state.archivedRoutineRecords = restored.archivedRoutineRecords;
     });
   }
 }
